@@ -26,11 +26,9 @@ and the Brier scores as below:
 
 In the evaluation phase, we used bias and standard errors to assess the performance of the transported prediction model, considering the Framingham data with outcome but missing in the NHANES data .We found that our prediction model worked well in both populations (simulated and non_simulated) with very low bias in the siulated population. Based on the findings we concluded that our prediction model for heart disease could be transported to a diverse populations.
 
-These were the evaluation measures for transporting our prediction model to a Non-simulated population 
-![image](https://github.com/kasigi234/PHP2550/assets/132590202/152f2a34-7bb2-4f5b-ad9e-f2eb9f00a846)
+These were the evaluation measures for transporting our prediction model to a Non-simulated population![image](https://github.com/kasigi234/PHP2550/assets/132590202/152f2a34-7bb2-4f5b-ad9e-f2eb9f00a846)
 
-while this was how the prediction model worked on the simulated population.
-![image](https://github.com/kasigi234/PHP2550/assets/132590202/d11e6edb-f473-433e-bd3b-43357852f41b)
+while this was how the prediction model worked on the simulated population.![image](https://github.com/kasigi234/PHP2550/assets/132590202/d11e6edb-f473-433e-bd3b-43357852f41b)
 
 
 
