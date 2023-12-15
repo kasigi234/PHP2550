@@ -13,5 +13,8 @@ This project focused on developing regression models to predict the need for tra
 
 ![image](https://github.com/kasigi234/PHP2550/assets/132590202/3d834460-fb3e-47c1-88b5-4dcdd64f76f9)
 
+![image](https://github.com/kasigi234/PHP2550/assets/132590202/39cb71da-6c98-4897-837c-e6d51f2f1506)
+
+
 
 
