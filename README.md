@@ -1,2 +1,2 @@
 # Final Project PHP2650
- This is a Big data project that focuses sequence to sequence models for ANtural language processing
+ This are projects done in the Practical Data Analysis class during the Fall semester 2023. 
