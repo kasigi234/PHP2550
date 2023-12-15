@@ -5,4 +5,5 @@
 
 This project focused on investigating the impact of prenatal tobacco exposure on self-regulation, substance use, and externalizing behavior in children. Exposure to smoking during pregnancy and environmental tobacco smoke has shown to have profound effects on children, contributing to health issues and behavioral challenges. With a dataset comprising responses from a randomly selected sub-population of mothers and their adolescent children, aged 12-16 years, we aim to analyze the association between smoking during pregnancy (SDP) and environmental tobacco smoking (ETS) exposure and various outcomes in children. The exploratory analysis involved a thorough data pre-processing, including outlier removal, handling missing values, and data transformations. Our primary objectives was aimed at understanding the relationships between SDP(Smoking during pregnancy), ETS(Environmental Tobacco Smoking) exposure, and variables such as self-regulation, externalizing behavior, and substance use. 
 
+## Project 2:Developing a Predictive Model for Timing and Indication for Tracheostomy Need in Neonates with Severe Bronchopulmonary Dysplasia
 
