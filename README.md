@@ -24,20 +24,12 @@ The Inverse weights were obtained as below:
 and the Brier scores as below:
 ![image](https://github.com/kasigi234/PHP2550/assets/132590202/c9489795-8d44-44ad-8c64-9eeddac3b7ec)
 
-In the evaluation phase, we used bias and standard errors to assess the performance of the transported prediction model, considering the Framingham data with outcome and the NHANES data without it.
+In the evaluation phase, we used bias and standard errors to assess the performance of the transported prediction model, considering the Framingham data with outcome but missing in the NHANES data .We found that our prediction model worked well in both populations (simulated and non_simulated) with very low bias in the siulated population. Based on the findings we concluded that our prediction model for heart disease could be transported to a diverse populations.
+
+![image](https://github.com/kasigi234/PHP2550/assets/132590202/152f2a34-7bb2-4f5b-ad9e-f2eb9f00a846)
 
 
-we obtained the brier score estimator that was used as a measure of the models performance.based on the probability of being in the target population given the source population. to obtain the 
-
-
-
-
- We found that our prediction model worked okay, even when we didn't have all the data we wanted. This is important because it helps us make good decisions even when doing real-world tests is hard. Our study tells us how well our predictions work for heart disease in different groups of people. Check out what we did to see how you can use these predictions in your work.
-
-In our study, we figured out a way to use just the important info to make predictions for the new group.
-
-
-In the realm of predictive modeling, the challenge of assessing model performance across populations with varying levels of outcome information has prompted our investigation into the transportability of prediction models. With a focus on scenarios where detailed outcome data are lacking in the target population, we propose a novel methodology leveraging summary statistics for model transport. Drawing from the Framingham Heart Study and applying logistic risk models, our research predicts cardiovascular heart disease risk within the NHANES population. Through a transparent simulation study adhering to ADEMP principles, we extend prediction scores from Framingham to a simulated NHANES target population, showcasing the potential for predictive model applicability in diverse settings. Despite lacking long-term outcomes in NHANES, our comprehensive approach, including eligibility criteria alignment and inverse odds weighting, results in a predictive model exhibiting a moderate level of accuracy and good calibration. Simulations offer valuable insights into evidence-based decision-making, especially when real-world experiments are challenging. Our analysis sheds light on logistic regression model performance in predicting cardiovascular disease across different populations, providing a foundation for broader application and generalization. Explore our methodology and findings to enhance your understanding of predictive model transportability.
+![image](https://github.com/kasigi234/PHP2550/assets/132590202/d11e6edb-f473-433e-bd3b-43357852f41b)
 
 
 
