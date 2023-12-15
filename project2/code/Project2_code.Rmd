@@ -1,0 +1,838 @@
+---
+title: "Revised Project 2"
+output:
+  bookdown::pdf_document2:
+    toc: false
+    number_section: false
+bibliography: references.bib
+header-includes:
+  - \usepackage{booktabs}
+  - \usepackage{array}
+  - \usepackage{lmodern}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,
+                      message = FALSE,
+                      warning = FALSE, 
+                      error = FALSE,
+                      fig.align="center",
+                      fig.pos = "H")
+
+
+```
+
+```{r load the required libraries}
+# load library
+library(mice)
+library(gtsummary)
+library(tidyverse)
+library(glmnet) 
+library(leaps)
+library(kableExtra)
+library(knitr)
+library(pROC)
+library(bestglm) 
+library(latex2exp)
+library(ggplot2)
+library(tableone)
+library(Matrix)
+library(MASS)
+library(tidyr)
+library(naniar)
+library(dplyr)
+library(lattice)
+library(reshape2)
+library(formatR)
+library(lme4)
+library(caret)
+library(patchwork)
+library(cowplot)
+
+```
+
+
+```{r Read data and variable transformations}
+# load the data
+trach_df = read.csv("project2.csv")
+
+#check for duplicated IDs
+dup_ids <- duplicated(trach_df$record_id) | duplicated(trach_df$record_id, fromLast = TRUE)
+
+# rows with duplicated IDs
+dup_entries <- trach_df[dup_ids, ] #789, 790, 791, 792
+
+# blank values to NA
+trach_df[trach_df == ""] <- NA
+
+# keep only unique records
+trach <- trach_df[!dup_ids, ] #995 30
+
+# Select variables and rename
+trach <- trach %>% #dplyr::select(-record_id, -center) %>%
+  rename(prenat_steroids = prenat_ster, 
+         comp_prenat_steroids = com_prenat_ster, 
+         sex = gender, weight_36wks = weight_today.36,
+         peep_cmH2o_mod_36wks= peep_cm_h2o_modified.36,
+         weight_44wks = weight_today.44,med_PH_44wks = med_ph.44,
+         peep_cmH2o_mod_36wks = peep_cm_h2o_modified.36,
+         deliv_method = del_method,
+         ventilation_support_36wks = ventilation_support_level.36,
+         inspired_oxygen_36wks = inspired_oxygen.36,
+         peak_delta_36wks = p_delta.36, med_ph_36wks = med_ph.36,
+         vent_support_level_mod_44wks=ventilation_support_level_modified.44,
+         peep_cmH2o_mod_44wks = peep_cm_h2o_modified.44,
+         peak_delta_44wks = p_delta.44, med_ph_44wks = med_ph.44,
+         Tracheostomy = Trach, inspired_oxygen_44wks = inspired_oxygen.44)
+
+trach$deliv_method <- case_when(trach$deliv_method == 1 ~ 1, 
+                                   trach$deliv_method == 2 ~ 0)
+
+trach$prenat_steroids <- ifelse(trach$prenat_steroids == "No", 0, 
+                         ifelse(trach$prenat_steroids == "Yes", 1,
+                                trach$prenat_steroids))
+
+trach$comp_prenat_steroids <- ifelse(trach$comp_prenat_steroids == "No", 0, 
+                         ifelse(trach$comp_prenat_steroids == "Yes", 1,
+                                trach$comp_prenat_steroids))
+
+# make comp_prenat_steroids == No if prenat_steroids == No
+trach$comp_prenat_steroids <- ifelse(trach$prenat_steroids == 0, 0,
+                                     trach$comp_prenat_steroids)
+
+trach$sex <- case_when(trach$sex == 1 ~ "1",
+                          trach$sex == 2 ~ "0",
+                          is.na(trach$sex) ~ "Ambiguous",
+                          TRUE ~ as.character(trach$sex))
+
+trach$sga <- ifelse(trach$sga == "Not SGA", 0, 
+                      ifelse(trach$sga == "SGA", 1, trach$sga))
+
+trach$any_surf <- ifelse(trach$any_surf == "No", 0, 
+                            ifelse(trach$any_surf == "Yes", 1,
+                                   trach$any_surf))
+
+# create a composite outcome variable from Death and Tracheostomy
+trach$Death <- ifelse(trach$Death == "No", 0, 
+                         ifelse(trach$Death == "Yes", 1,
+                                trach$Death))
+
+trach$Tracheostomy <- ifelse(trach$Tracheostomy == "No", 0, 
+                        ifelse(trach$Tracheostomy == "Yes", 1,
+                                trach$Tracheostomy))
+
+#trach$comp_outcome <- with(trach,
+                     #   ifelse(Death == 1 | Tracheostomy ==
+                       #            1,1, 0))
+
+#trach$comp_outcome <- factor(trach$comp_outcome, levels = c("1", "0"))
+
+#trach$comp_outcome <- as.integer(trach$comp_outcome)
+trach$deliv_method <- as.integer(trach$deliv_method)
+
+# All numeric
+trach$bw <- as.numeric(trach$bw)
+trach$blength <- as.numeric(trach$blength)
+trach$weight_36wks <- as.numeric(trach$weight_36wks)
+trach$weight_44wks <- as.numeric(trach$weight_44wks)
+trach$peep_cmH2o_mod_36wks <- as.numeric(trach$peep_cmH2o_mod_36wks)
+trach$peep_cmH2o_mod_44wks <- as.numeric(trach$peep_cmH2o_mod_44wks)
+trach$ga <- as.numeric(trach$ga)
+
+
+# All factors
+fact <- function(data) {
+    categorical_vars <- sapply(data, function(x) is.character(x) || is.integer(x))
+    data[categorical_vars] <- lapply(data[categorical_vars], as.factor)
+  
+  return(data)
+}
+trach <- fact(trach)
+
+```
+
+
+```{r FilterData, include=FALSE, echo=FALSE, eval=FALSE}
+# Filter data for after 36 weeks
+trach_36wks <- trach %>%
+  filter(hosp_dc_ga >= 36)
+
+# Filter data to only after 44 weeks
+trach_44wks <- trach %>%
+  filter(hosp_dc_ga >= 44)
+
+```
+
+
+```{r Missing36extra, include=TRUE}
+
+# Filter data for after 36 weeks
+trach_36wks <- trach %>%
+  filter(hosp_dc_ga >= 36)
+
+# Distribution of Missing Data at 36 weeks
+missing_df <- data.frame(
+  Variable = names(trach_36wks),
+  missing_count = sapply(trach_36wks, function(x) sum(is.na(x))))
+
+missing_df$percent_missing <- round(missing_df$missing_count / nrow(trach_36wks) * 100, 2)
+
+missing_df <- missing_df %>%
+  arrange(desc(percent_missing))
+
+# Remove row names
+rownames(missing_df) <- NULL
+
+# Select only those with missing records
+missing_df <- missing_df %>%
+  filter(missing_count > 0) 
+
+missing_df$missing_count <- round(missing_df$missing_count, 2)
+missing_df$percent_missing <- round(missing_df$percent_missing, 2)
+  
+  missing_df %>% 
+  mutate() %>%
+  mutate_all(linebreak) %>%
+  kbl(caption = "Missing Data in the 36weeks Data",
+  col.names = linebreak(c("Variable", "n", "% Proportion")),
+  booktabs = T, escape = T, align = "c") %>%
+  kable_styling(latex_options = c('hold_position'),
+                font_size = 8) 
+
+```
+
+```{r Missing44extra}
+# Filter data to only after 44 weeks
+trach_44wks <- trach %>%
+  filter(hosp_dc_ga >= 44)
+
+# Distribution of Missing Data at 44 weeks
+missing_df2 <- data.frame(
+  Variable = names(trach_44wks),
+  missing_count = sapply(trach_44wks, function(x) sum(is.na(x))))
+
+missing_df2$percent_missing <- round(missing_df2$missing_count / nrow(trach_44wks) * 100, 2)
+
+missing_df2 <- missing_df2 %>%
+  arrange(desc(percent_missing))
+
+# Remove row names
+rownames(missing_df2) <- NULL
+
+# Select only those with missing records
+missing_df2 <- missing_df2 %>%
+  filter(missing_count > 0) 
+
+missing_df2$missing_count <- round(missing_df2$missing_count, 2)
+missing_df2$percent_missing <- round(missing_df2$percent_missing, 2)
+
+  missing_df2 %>% 
+  #  mutate(n = nrow(trach_44wks)) %>%
+  mutate() %>%
+  mutate_all(linebreak) %>%
+  kbl(caption = "Missing Data in the 44weeks Data",
+  col.names = linebreak(c("Variable", "n", "% Proportion")),
+  booktabs = T, escape = T, align = "c") %>%
+  kable_styling(latex_options = c('hold_position'),
+                font_size = 9) 
+
+```
+
+```{r mytable1}
+# Distribution of variables by center
+trach %>%
+  dplyr::select(-c(record_id)) %>%
+  tbl_summary(by = center, 
+    statistic = list(
+      all_continuous() ~ "{mean} ({sd})",
+      all_categorical() ~ "{n} of {N} ({p}%)")) %>%
+  add_p(pvalue_fun = ~ style_pvalue(.x, digits = 2)) %>%
+  add_overall() %>%
+  add_n() %>%
+  modify_header(label ~ "**Variable**") %>%
+  modify_spanning_header(c("stat_1", "stat_2") ~ "**By Center**") %>%
+  bold_labels() %>%
+  as_kable_extra(booktabs = TRUE, escape = F) %>%
+  kable_styling(latex_options = c("scale_down"),
+                font_size = 8) 
+```
+
+
+```{r myplot,include=FALSE,eval=FALSE, echo=FALSE}
+# Check to see how correlated the missing data 
+var_missn <- trach[, colSums(is.na(trach)) > 0]
+num_data <- var_missn[sapply(var_missn, is.numeric)]
+corr_mat <- cor(num_data)
+
+# Compute correlation matrix
+cor_matrix <- cor(num_data, use = "complete.obs")
+
+# Melt the correlation matrix for ggplot
+cor_df <- melt(cor_matrix) 
+
+# Corr Matrix for missing data
+ggplot(data = cor_df, aes(x = Var1, y = Var2)) + 
+  geom_tile(aes(fill = value), color = "white") + 
+  geom_text(aes(label = round(value, 1)), size = 2) +
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
+                       midpoint = 0, limit = c(-1,1), space =
+                         "Lab", name="Correlation") + 
+  theme_minimal() + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 1, 
+                                   size = 10, hjust = 1),
+        axis.text.y = element_text(size = 10)) +
+  coord_fixed() +
+  labs(x = NULL, y = NULL, title=
+         "Correlation Matrix for Missing") 
+```
+
+
+```{r mytable2}
+var_missn <- trach[, colSums(is.na(trach)) > 0]
+num_data <- names(var_missn)[sapply(var_missn, is.numeric)]
+corr_mat <- cor(trach[, num_data], use = "pairwise.complete.obs")
+
+# Remove diagonal and redundant values
+corr_mat[!lower.tri(corr_mat)] <- NA 
+cor_df <- data.frame(corr_mat) %>%
+  rownames_to_column() %>%
+  gather(key = "variable", value = "correlation", -rowname) %>%
+  filter(abs(correlation) > 0.40)
+
+# Correlation greater than 0.4
+cor_df %>%
+  rename('Variable1' = 'rowname', 'Variable2' = 'variable') %>%
+  filter(!(str_detect(Variable1, "_diff") | str_detect(Variable2, "_diff"))) %>%
+  arrange(desc(correlation)) %>%
+  kbl(caption = "Correlation Among Continous Variables with Missing Data",
+  col.names = linebreak(c("Variables 1", "Variables 2", "Correlation")),
+  booktabs = T, escape = T, align = "c") %>%
+  kable_styling(latex_options = c('hold_position'),
+                font_size = 8) 
+
+```
+
+
+```{r mytable3}
+# Calculate summary statistics for numeric columns
+summary_table <- trach %>%
+  dplyr::select(variable = colnames(.)[sapply(., is.numeric)]) %>%
+  summarise(
+    variable = colnames(trach)[sapply(trach, is.numeric)],
+    Mean = round(colMeans(., na.rm = TRUE), 2),
+    SD = round(apply(., 2, sd, na.rm = TRUE), 2),
+    Min = round(apply(., 2, min, na.rm = TRUE), 2),
+    Max = round(apply(., 2, max, na.rm = TRUE), 2))
+
+summary_table %>% 
+  mutate() %>%
+  mutate_all(linebreak) %>%
+  kbl(caption = "Summary Statistics for Continuous Variables",
+  col.names = linebreak(c("Variable", "Mean", "SD",
+                          "Min","Max")),
+  booktabs = T, escape = T, align = "c") %>%
+  kable_styling(latex_options = c('hold_position'),
+                font_size = 8)
+
+```
+
+```{r Imputing For Missing Data}
+# Remove variables that should not be imputed
+trach_sub36 <- trach_36wks[, !colnames(trach_36wks) %in% c("mat_race", "Death", "record_id",  "hosp_dc_ga")]
+trach_df_mice_out <- mice::mice(trach_sub36, 5, pri=F)
+
+#  Remove variables that should not be imputed in 44wks data
+trach_sub44 <- trach_44wks[, !colnames(trach_44wks) %in% c("mat_race", "Death", "record_id", "hosp_dc_ga")]
+trach_df_mice_out2 <- mice::mice(trach_sub44, 5, pri=F)
+
+# Store each imputed data set
+trach_df_imp <- vector("list",5)    
+for (i in 1:5){
+   trach_df_imp[[i]] <- mice::complete(trach_df_mice_out,i) 
+}
+
+# Store each imputed data set
+trach_df_imp2 <- vector("list",5)    
+for (i in 1:5){
+   trach_df_imp2[[i]] <- mice::complete(trach_df_mice_out2,i) 
+}
+
+```
+
+```{r EstimatedVariablesextra36}
+###################################################### 
+#### Lasso for 36 weeks data #### 
+###################################################### 
+
+set.seed(1)
+lasso <- function(df) { 
+  #' Runs 10-fold CV for lasso and returns corresponding coefficients 
+  #' @param df, data set
+  #' @return coef, coefficients for minimum cv error
+  
+  # Matrix form for ordered variables 
+  x.ord <- model.matrix(Tracheostomy ~., data = df)[,-1] 
+  y.ord <- df$Tracheostomy
+  
+  # Generate folds
+  k <- 10 
+  set.seed(1) # consistent seeds between imputed data sets
+  folds <- sample(1:k, nrow(df), replace=TRUE)
+  
+  # Lasso model with cross-validation
+  lasso_mod_cv <- cv.glmnet(x.ord, y.ord, nfolds = 10, 
+                            foldid = folds, alpha = 1, 
+                            family = "binomial")
+  
+  # Get coefficients for the minimum lambda
+  coefi <- coef(lasso_mod_cv, s = "lambda.min")
+  
+  
+  return(coefi) 
+}  
+
+# Find average lasso coefficients over imputed datasets
+lasso_coef1 <- lasso(trach_df_imp[[1]]) 
+lasso_coef2 <- lasso(trach_df_imp[[2]]) 
+lasso_coef3 <- lasso(trach_df_imp[[3]]) 
+lasso_coef4 <- lasso(trach_df_imp[[4]]) 
+lasso_coef5 <- lasso(trach_df_imp[[5]]) 
+lasso_coef <- cbind(lasso_coef1, lasso_coef2, lasso_coef3, 
+                    lasso_coef4, lasso_coef5) 
+avg_coefs_lasso <- apply(lasso_coef, 1, mean) 
+
+
+###################################################### 
+#### Ridge for 36weeks data #### 
+###################################################### 
+set.seed(2)
+ridge <- function(df) { 
+  #' Runs 10-fold CV for ridge and returns corresponding coefficients 
+  #' @param df, data set
+  #' @return coef, coefficients for minimum cv error
+  
+  # Matrix form for ordered variables 
+  x.ord <- model.matrix(Tracheostomy ~., data = df)[,-1] 
+  y.ord <- df$Tracheostomy
+  
+  # Generate folds
+  k <- 10 
+  set.seed(2) # consistent seeds between imputed data sets
+  folds <- sample(1:k, nrow(df), replace=TRUE)
+  
+  # Ridge model
+  ridge_mod_cv <- cv.glmnet(x.ord, y.ord, nfolds = 10, foldid = folds, alpha = 0, family = "binomial") 
+  ridge_mod <- glmnet(x.ord, y.ord, nfolds = 10, alpha = 0, family = "binomial", lambda = ridge_mod_cv$lambda.min) 
+  
+  # Get coefficients 
+  coef <- coef(ridge_mod) 
+  return(coef) 
+} 
+# Find average ridge coefficients over imputed datasets
+ridge_coef1 <- ridge(trach_df_imp[[1]]) 
+ridge_coef2 <- ridge(trach_df_imp[[2]]) 
+ridge_coef3 <- ridge(trach_df_imp[[3]]) 
+ridge_coef4 <- ridge(trach_df_imp[[4]]) 
+ridge_coef5 <- ridge(trach_df_imp[[5]]) 
+ridge_coef <- cbind(ridge_coef1, ridge_coef2, ridge_coef3, ridge_coef4, ridge_coef5) 
+avg_coefs_ridge <- apply(ridge_coef, 1, mean)
+
+```
+
+
+```{r EstimatedVariablesextra44}
+###################################################### 
+#### Lasso for 44 weeks data #### 
+###################################################### 
+
+set.seed(3)
+lasso2 <- function(df) { 
+  #' Runs 10-fold CV for lasso and returns corresponding coefficients 
+  #' @param df, data set
+  #' @return coef, coefficients for minimum cv error
+  
+  # Matrix form for ordered variables 
+  x.ord <- model.matrix(Tracheostomy ~., data = df)[,-1] 
+  y.ord <- df$Tracheostomy
+  
+  # Generate folds
+  k <- 10 
+  set.seed(3) # consistent seeds between imputed data sets
+  folds <- sample(1:k, nrow(df), replace=TRUE)
+  
+  # Lasso model
+  lasso_mod_cv <- cv.glmnet(x.ord, y.ord, nfolds = 10, foldid =
+                           folds, alpha = 1, family = "binomial") 
+  
+   lasso_mod <- glmnet(x.ord, y.ord, nfolds = 10, alpha = 1,
+                       family = "binomial", lambda =
+                        lasso_mod_cv$lambda.min)
+  # Get coefficients 
+  coef <- coef(lasso_mod) #, lambda = lasso_mod$lambda.min) 
+  return(coef) 
+}  
+
+# Find average lasso coefficients over imputed datasets
+lasso_coef1.2 <- lasso2(trach_df_imp2[[1]]) 
+lasso_coef2.2 <- lasso2(trach_df_imp2[[2]]) 
+lasso_coef3.2 <- lasso2(trach_df_imp2[[3]]) 
+lasso_coef4.2 <- lasso2(trach_df_imp2[[4]]) 
+lasso_coef5.2 <- lasso2(trach_df_imp2[[5]]) 
+lasso_coef2 <- cbind(lasso_coef1.2, lasso_coef2.2, lasso_coef3.2, 
+                    lasso_coef4.2, lasso_coef5.2) 
+avg_coefs_lasso2 <- apply(lasso_coef2, 1, mean)
+
+###################################################### 
+#### Ridge for 44 weeks data #### 
+###################################################### 
+set.seed(4)
+ridge2 <- function(df) { 
+  #' Runs 10-fold CV for ridge and returns corresponding coefficients 
+  #' @param df, data set
+  #' @return coef, coefficients for minimum cv error
+  
+  # Matrix form for ordered variables 
+  x.ord <- model.matrix(Tracheostomy ~., data = df)[,-1] 
+  y.ord <- df$Tracheostomy
+  
+  # Generate folds
+  k <- 10 
+  set.seed(4) # consistent seeds between imputed data sets
+  folds <- sample(1:k, nrow(df), replace=TRUE)
+  
+  # Ridge model
+  ridge_mod_cv <- cv.glmnet(x.ord, y.ord, nfolds = 10, foldid = folds, alpha = 0, family = "binomial") 
+  ridge_mod <- glmnet(x.ord, y.ord, nfolds = 10, alpha = 0, family = "binomial", lambda = ridge_mod_cv$lambda.min) 
+  
+  # Get coefficients 
+  coef <- coef(ridge_mod) 
+  return(coef) 
+} 
+# Find average ridge coefficients over imputed datasets
+ridge_coef1.2 <- ridge2(trach_df_imp2[[1]]) 
+ridge_coef2.2 <- ridge2(trach_df_imp2[[2]]) 
+ridge_coef3.2 <- ridge2(trach_df_imp2[[3]]) 
+ridge_coef4.2 <- ridge2(trach_df_imp2[[4]]) 
+ridge_coef5.2 <- ridge2(trach_df_imp2[[5]]) 
+ridge_coef2 <- cbind(ridge_coef1.2, ridge_coef2.2, ridge_coef3.2, ridge_coef4.2, ridge_coef5.2) 
+avg_coefs_ridge2 <- apply(ridge_coef2, 1, mean)
+
+```
+
+
+```{r VariablesOutput}
+# table to show the coefficients from two models at 36 weeks and 44 weeks 
+mytable <- as.data.frame(cbind(
+  "36wks Lasso" = avg_coefs_lasso,
+  "36wks Ridge" = avg_coefs_ridge,
+  "44wks Lasso" = avg_coefs_lasso2,
+  "44wks Ridge" = avg_coefs_ridge2
+  )
+)
+
+# Round up
+mytable <- round(mytable, 7)
+
+
+variables_to_exclude <- c("center2","center3","center4","center5","center7","center12","center16","center20","center21")
+
+# Filter out the rows for the specified variables
+mytable <- mytable[!rownames(mytable) %in% variables_to_exclude, ]
+
+mytable[mytable == 0] <- "-"
+
+mytable %>%
+  kbl(caption = "Estimated Coefficients", booktabs = TRUE) %>%
+  kable_styling(latex_options = c("scale_down"),
+                font_size = 8) #%>%
+  #column_spec(1, bold = TRUE) 
+
+
+```
+
+```{r}
+#################################################################
+#### DEVELOPING A PREDICTIVE MODEL using 36 weeks data ####
+##################################################################
+trach_df_long <- mice::complete(trach_df_mice_out,action="long")
+y <- trach_df_long$Tracheostomy
+
+# partion data into train-test split
+set.seed(2550)
+train_indices <- createDataPartition(y, p = 0.7, list = FALSE)
+train_data <- trach_df_long[train_indices, ]
+test_data <- trach_df_long[-train_indices, ]
+
+y_test <- as.factor(test_data$Tracheostomy)
+
+# Fit a logistic model with random intercept 
+model2 <- glmer(Tracheostomy ~ bw + blength + deliv_method + prenat_steroids + comp_prenat_steroids + sex + sga + any_surf + weight_36wks + weight_36wks + inspired_oxygen_36wks + med_ph_36wks +
+                  ventilation_support_36wks + peep_cmH2o_mod_36wks+ peep_cmH2o_mod_44wks+ med_ph_44wks + vent_support_level_mod_44wks +
+                  weight_36wks*ventilation_support_36wks + inspired_oxygen_44wks+ weight_36wks*peep_cmH2o_mod_36wks +
+                  ventilation_support_36wks*weight_36wks +  (1|center), data = train_data,
+                family = binomial(link = "logit"))
+
+# Predict on test set
+preds <- predict(model2, newdata = test_data, type = "response")
+
+```
+
+
+```{r}
+#################################################################
+#### DEVELOPING A PREDICTIVE MODEL using data after 44 weeks ####
+##################################################################
+trach_df_long2 <- mice::complete(trach_df_mice_out2,action="long")
+yy <- trach_df_long2$Tracheostomy
+
+# train and test split
+set.seed(2550)
+train_idx <- createDataPartition(y, p = 0.7, list = FALSE)
+train_df <- trach_df_long2[train_idx , ]
+test_df <- trach_df_long2[-train_idx , ]
+
+yy_test <- as.factor(test_df$Tracheostomy)
+
+# Fit a mixed-effects logistic regression model
+model2.2 <- glmer(Tracheostomy ~ birth_hc + blength + prenat_steroids + comp_prenat_steroids + any_surf + ventilation_support_36wks + med_ph_36wks + weight_44wks + inspired_oxygen_36wks   + peak_delta_44wks + peep_cmH2o_mod_44wks + inspired_oxygen_44wks+ med_ph_44wks + vent_support_level_mod_44wks + birth_hc*ventilation_support_36wks +   (1 |center), data = train_df, family = binomial(link = "logit")) 
+
+preds_44 <- predict(model2.2, newdata = test_df, type="response")
+
+```
+
+
+```{r Finding optimal threshold, include=FALSE, eval=FALSE}
+# determine the threshold to use in 36 weeks data 
+roc_mod <- roc(predictor=preds, 
+               response=as.factor(y_test), 
+               levels = c(0,1), direction = "<")
+plot(roc_mod, print.auc=TRUE, print.thres = TRUE)
+
+
+roc_vals <- coords(roc=roc_mod, x = "all")
+#head(roc_vals)
+
+roc_vals[roc_vals$sensitivity > 0.75, ] %>% tail(n=1)
+
+# determine the threshold to use with the 44 weeks data
+roc_mod <- roc(predictor=preds_44, 
+               response=as.factor(yy_test), 
+               levels = c(0,1), direction = "<")
+plot(roc_mod, print.auc=TRUE, print.thres = TRUE)
+
+
+roc_vals <- coords(roc=roc_mod, x = "all")
+#head(roc_vals)
+
+roc_vals[roc_vals$sensitivity > 0.75, ] %>% tail(n=1)
+```
+
+```{r}
+# model evaluation indicators using the combined data weeks
+# AUC, sensitivity, specificity, accuracy, precision and Brier score values of the fitted model
+evaluation <- function(pred,y_test,threshold=0.2){
+  #' get AUC, sensitivity, specificity, accuracy, precision and Brier scorevalues of the fitted model
+  #' @param pred, the prediction values
+  #' @param y.test, the labels of test dataset
+  #' @param threshold, a numeric number of threshold to classify the probability to classes
+  #' @return AUC, sensitivity, specificity, accuracy, and precision values
+  #' 
+   pred_numeric <- as.numeric(as.character(pred))
+  y_test_numeric <- as.numeric(as.character(y_test))
+
+  # Check if the outcome is binary
+  if (length(unique(y_test_numeric)) > 2) {
+    stop("Response variable must be binary for ROC analysis.")
+  }
+  
+  # ROC curve
+  roc_object <- roc(y_test_numeric, pred_numeric, levels = levels(y_test), direction = "<")
+
+  # AUC
+  auc <- roc_object$auc
+  
+  df <- data.frame(pred = as.numeric(pred_numeric > threshold), label = as.numeric(y_test_numeric))
+
+  TP <- dim(df[(df$pred==1&df$label==1),])[1]
+  TN <- dim(df[(df$pred==0&df$label==0),])[1]
+  FP <- dim(df[(df$pred==1&df$label==0),])[1]
+  FN <- dim(df[(df$pred==0&df$label==1),])[1]
+  
+  Recall = TP / (TP + FN)
+  Precision = TP / (TP + FP)
+  Brier_score = mean((pred_numeric - y_test_numeric)^2)
+  F1_score = 2 * (Precision * Recall) / (Precision + Recall)
+
+  return(c(AUC = auc, sensitivity = Recall , 
+           specificity = TN / (TN + FP),
+            accuracy = (TP + TN) / (TP + TN + FP + FN), 
+           precision = Precision,
+           "F1 score" = F1_score,
+            "Brier Score" = Brier_score))
+
+  }
+evaluation_metrics <- evaluation(preds, y_test, threshold = 0.2)
+
+# model evaluation indicators for 44weeks 
+# AUC, sensitivity, specificity, accuracy, precision and Brier score values of the fitted model
+evaln <- function(pred,yy_test,threshold=0.3){
+  #' get AUC, sensitivity, specificity, accuracy, precision and Brier scorevalues of the fitted model
+  #' @param pred, the prediction values
+  #' @param y.test, the labels of test dataset
+  #' @param threshold, a numeric number of threshold to classify the probability to classes
+  #' @return AUC, sensitivity, specificity, accuracy, and precision values
+  #' 
+   pred_numeric_44 <- as.numeric(as.character(pred))
+  yy_test_numeric <- as.numeric(as.character(yy_test))
+
+  # Check if response is binary
+  if (length(unique(yy_test_numeric)) > 2) {
+    stop("Response variable must be binary for ROC analysis.")
+  }
+  
+  # ROC curve
+  roc_obj <- roc(yy_test_numeric, pred_numeric_44, levels = levels(yy_test), direction = "<")
+
+  # AUC
+  auc <- roc_obj$auc
+  
+  df <- data.frame(pred = as.numeric(pred_numeric_44 > threshold), label = as.numeric(yy_test_numeric))
+
+  TP <- dim(df[(df$pred==1&df$label==1),])[1]
+  TN <- dim(df[(df$pred==0&df$label==0),])[1]
+  FP <- dim(df[(df$pred==1&df$label==0),])[1]
+  FN <- dim(df[(df$pred==0&df$label==1),])[1]
+  
+  recall = TP / (TP + FN)
+  precision = TP / (TP + FP)
+  brier_score = mean((pred_numeric_44 - yy_test_numeric)^2)
+  f1_score = 2 * (precision * recall) / (precision + recall)
+  
+  return(c(AUC = auc, sensitivity = recall , 
+           specificity = TN / (TN + FP),
+            accuracy = (TP + TN) / (TP + TN + FP + FN), 
+           precision = precision,
+           "F1 score" = f1_score,
+            "Brier Score" = brier_score))
+
+  }
+evaluation_metric <- evaln(preds_44, yy_test, threshold = 0.3)
+
+```
+
+###        Model Validation
+
+
+```{r EvaluationextraTable}
+# Evaluation Metrics at 36 and 44 weeks
+evaluation_36 <- evaluation(preds, y_test, threshold = 0.2)
+evaluation_44 <- evaln(preds_44, yy_test, threshold = 0.3)
+
+evaln_df <- data.frame(
+  Metric = c("AUC", "Sensitivity", "Specificity", "Accuracy", "Precision", 
+             "F1 Score", "Brier Score"),Value = evaluation_metric)
+
+eval_df <- data.frame(
+  Metric = c("AUC", "Sensitivity", "Specificity", "Accuracy", "Precision","F1 Score", 
+             "Brier Score"),Value = evaluation_metrics)
+
+# Combine the two data frames
+merged_df <- merge(evaln_df, eval_df, by = "Metric", suffixes = c("_44wks", "_36wks"))
+
+colnames(merged_df) <- c("Metric", "Model for 44wks", "Model for 36wks")
+
+   merged_df%>%
+  kable(caption = "Measures of discrimination and calibration", booktabs = TRUE, align = "c") %>%
+  kable_styling(latex_options = c('HOLD_position'))
+
+```
+
+```{r roccurve, fig.cap="ROC Curve for Multilevel Logistics Regression Models", out.width = "80%"}
+########################################################## 
+#### evaluation of the model on full data and 44weeks #### 
+##########################################################
+# roc and auc
+preds <- as.numeric(preds)
+preds_44 <- as.numeric(preds_44)
+
+logistic_36wks <- roc(test_data$Tracheostomy,preds) 
+logistic_44wks <- roc(test_df$Tracheostomy, preds_44)
+
+roc_curve_36 <- data.frame(FPR = 1-logistic_36wks$specificities, 
+                              TPR = logistic_36wks$sensitivities)
+roc_curve_44 <- data.frame(FPR = 1-logistic_44wks$specificities, 
+                              TPR = logistic_44wks$sensitivities)
+
+roc_dat <- rbind(roc_curve_36,roc_curve_44)
+roc_dat$model <- c(rep("Data after 36weeks",nrow(roc_curve_36)),
+                    rep("Data after 44weeks",nrow(roc_curve_44)))
+
+# Store AUC values 
+auc_36wks <- round(logistic_36wks$auc, 3)
+auc_44wks <- round(logistic_44wks$auc, 3)
+
+# plot ROC curves for models that were used in variable selection
+ggplot(roc_dat, aes(x = FPR, y = TPR, color = model)) +
+  geom_line() +
+  geom_abline(intercept = 0, slope = 1, color = "grey", linetype = "dashed") +
+  labs(x = "False Positive Rate", y = "True Positive Rate", 
+       title = "ROC Curve on Validation Set") +
+  theme(plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5,size = 8)) +
+  theme_minimal()
+
+```
+
+```{r calibrationplots, fig.cap="Calibration Plot for Multilevel Logistic Regression Model", out.width = "80%"}
+# calibration plot for logistic regression at 36weeks
+num_cuts <- 10
+calib_dat <-  data.frame(probs = preds,
+                          bin = cut(preds, breaks = num_cuts),
+                          class=  
+                          as.numeric(test_data$Tracheostomy)-1)
+calib_dat <- calib_dat %>% 
+             group_by(bin) %>% 
+             dplyr::summarize(observed = sum(class)/n(),  
+                              expected = sum(probs)/n(), 
+                       se = sqrt(observed * (1- observed)/n()))
+
+plot_36 <- ggplot(calib_dat) + 
+  geom_abline(intercept = 0, slope = 1, color="red") + 
+  geom_errorbar(aes(x = expected, ymin = observed - 0.8*se, 
+                    ymax = observed + 0.8*se),
+                position = position_identity(),
+                colour="black", width = .01)+
+  geom_point(aes(x = expected, y = observed)) +
+  labs(x="Expected Prop", y="Observed Prop",title = '',
+    subtitle = "36 wks data")+
+  theme_minimal()
+
+# calibration plot for logistic regression at 44 weeks
+num_cuts <- 10
+calib_df <-  data.frame(probs = preds_44,
+                          bin = cut(preds_44, breaks = num_cuts),
+                          class = as.numeric(test_df$Tracheostomy)-1)
+calib_df <- calib_df %>% 
+             group_by(bin) %>% 
+             dplyr::summarize(observed = sum(class)/n(), 
+                       expected = sum(probs)/n(), 
+                       se = sqrt(observed * (1- observed)/n()))
+plot_44 <-ggplot(calib_df) + 
+  geom_abline(intercept = 0, slope = 1, color="red") + 
+  geom_errorbar(aes(x = expected, ymin = observed - 0.8*se,
+                    ymax = observed + 0.8*se),
+                position = position_identity(),
+                colour="black", width = .01)+
+  geom_point(aes(x = expected, y = observed)) +
+  labs(x ="Expected Prop", y="Observed Prop", title = '',
+       subtitle = "44 wks data") +
+  theme_minimal()
+
+# Arrange plots side by side 
+calib_plots <- plot_36 + plot_44 +
+  plot_layout(guides = "collect") +
+  plot_annotation(title = "Calibration plot")
+calib_plots
+
+#Multilevel Logistic Regression Models
+```

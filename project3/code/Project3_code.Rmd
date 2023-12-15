@@ -1,0 +1,962 @@
+---
+title: "PHP2550_Project3Revision"
+author: "Keviner"
+date: "`r Sys.Date()`"
+output:
+  bookdown::pdf_document2:
+    toc: false
+    number_sections: false
+bibliography: references.bib  
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message=FALSE, 
+                      warning=FALSE, 
+                      error=FALSE, 
+                      echo = FALSE, 
+                      fig.pos = "H" ,
+                      fig.align = 'center')
+```
+
+
+```{r Load the required libraries}
+# load required library
+library(tidyverse)
+library(kableExtra)
+library(knitr)
+library(pROC)
+library(latex2exp)
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+library(lattice)
+library(riskCommunicator)
+library(tableone)
+library(nhanesA)
+library(broom)
+library(MASS)
+library(gtsummary)
+library(corpcor)
+```
+
+
+```{r Load in data and initial preprocessing}
+# load source data
+data("framingham")
+
+# The Framingham data has been used to create models for cardiovascular risk.
+# The variable selection and model below are designed to mimic the models used
+# in the paper General Cardiovascular Risk Profile for Use in Primary Care 
+# This paper is available (cvd_risk_profile.pdf) on Canvas.
+
+framingham_df <- framingham %>% dplyr::select(c(CVD, TIMECVD, SEX, TOTCHOL, AGE,
+                                      SYSBP, DIABP, CURSMOKE, DIABETES, BPMEDS,
+                                      HDLC, BMI))
+framingham_df <- na.omit(framingham_df)
+
+framingham_summary_stats <- CreateTableOne(data=framingham_df, strata = c("SEX"))
+
+# Get blood pressure based on whether or not on BPMEDS
+framingham_df$SYSBP_UT <- ifelse(framingham_df$BPMEDS == 0, 
+                                 framingham_df$SYSBP, 0)
+framingham_df$SYSBP_T <- ifelse(framingham_df$BPMEDS == 1, 
+                                framingham_df$SYSBP, 0)
+
+# Looking at risk within 15 years - remove censored data
+#dim(framingham_df)
+framingham_df <- framingham_df %>%
+  filter(!(CVD == 0 & TIMECVD <= 365*15)) %>%
+  dplyr::select(-c(TIMECVD))
+#dim(framingham_df)
+
+# Filter to each sex
+framingham_df_men <- framingham_df %>% filter(SEX == 1)
+framingham_df_women <- framingham_df %>% filter(SEX == 2)
+
+# Fit models with log transforms for all continuous variables
+mod_men <- glm(CVD~log(HDLC)+log(TOTCHOL)+log(AGE)+log(SYSBP_UT+1)+
+                 log(SYSBP_T+1)+CURSMOKE+DIABETES, 
+      data= framingham_df_men, family= "binomial")
+
+
+mod_women <- glm(CVD~log(HDLC)+log(TOTCHOL)+log(AGE)+log(SYSBP_UT+1)+
+                   log(SYSBP_T+1)+CURSMOKE+DIABETES, 
+               data= framingham_df_women, family= "binomial")
+
+
+# The NHANES data here finds the same covariates among this national survey data
+library(nhanesA)
+
+# blood pressure, demographic, bmi, smoking, and hypertension info
+bpx_2017 <- nhanes("BPX_J") %>% 
+  dplyr::select(SEQN, BPXSY1 ) %>% 
+  rename(SYSBP = BPXSY1)
+
+demo_2017 <- nhanes("DEMO_J") %>% 
+  dplyr::select(SEQN, RIAGENDR, RIDAGEYR) %>% 
+  rename(SEX = RIAGENDR, AGE = RIDAGEYR)
+
+bmx_2017 <- nhanes("BMX_J") %>% 
+  dplyr::select(SEQN, BMXBMI) %>% 
+  rename(BMI = BMXBMI)
+
+smq_2017 <- nhanes("SMQ_J") %>%
+  mutate(CURSMOKE = case_when(SMQ040 %in% c(1,2) ~ 1,
+                              SMQ040 == 3 ~ 0, 
+                              SMQ020 == 2 ~ 0)) %>%
+  dplyr::select(SEQN, CURSMOKE)
+
+bpq_2017 <- nhanes("BPQ_J") %>% 
+  mutate(BPMEDS = case_when(
+    BPQ020 == 2 ~ 0,
+    BPQ040A == 2 ~ 0,
+    BPQ050A == 1 ~ 1,
+    TRUE ~ NA )) %>%
+  dplyr::select(SEQN, BPMEDS) 
+
+tchol_2017 <- nhanes("TCHOL_J") %>% 
+  dplyr::select(SEQN, LBXTC) %>% 
+  rename(TOTCHOL = LBXTC)
+hdl_2017 <- nhanes("HDL_J") %>% 
+  dplyr::select(SEQN, LBDHDD) %>% 
+  rename(HDLC = LBDHDD)
+diq_2017 <- nhanes("DIQ_J") %>% 
+  mutate(DIABETES = case_when(DIQ010 == 1 ~ 1, 
+                              DIQ010 %in% c(2,3) ~ 0, 
+                              TRUE ~ NA)) %>%
+  dplyr::select(SEQN, DIABETES) 
+
+mcq_2017 <- nhanes("MCQ_J") %>% 
+  dplyr::select(SEQN, MCQ160E, MCQ160F) 
+
+# Join data from different tables
+nhanes_df <- bpx_2017 %>%
+  full_join(demo_2017, by = "SEQN") %>%
+  full_join(bmx_2017, by = "SEQN") %>%
+  full_join(hdl_2017, by = "SEQN") %>%
+  full_join(smq_2017, by = "SEQN") %>%
+  full_join(bpq_2017, by = "SEQN") %>%
+  full_join(tchol_2017, by = "SEQN") %>%
+  full_join(diq_2017, by = "SEQN") %>% 
+  full_join(mcq_2017, by = "SEQN") # added by keviner
+
+# Eligibility criteria based on the framingham paper
+nhanes_df <- nhanes_df %>% 
+  filter(AGE >= 30 & AGE <= 62) %>% 
+  filter(MCQ160E == 2 & MCQ160F == 2)
+
+#nhanes_df$SEX <- as.factor(nhanes_df$SEX)
+nhanes_df$CURSMOKE <- as.factor(nhanes_df$CURSMOKE)
+nhanes_df$BPMEDS <- as.factor(nhanes_df$BPMEDS)
+
+nhanes_df$MCQ160E <- as.factor(nhanes_df$MCQ160E)
+nhanes_df$MCQ160F <- as.factor(nhanes_df$MCQ160F)
+nhanes_df$DIABETES <- as.factor(nhanes_df$ DIABETES)
+
+framingham_df$CURSMOKE <- as.factor(framingham_df$CURSMOKE)
+framingham_df$BPMEDS <- as.factor(framingham_df$BPMEDS)
+framingham_df$DIABETES <- as.factor(framingham_df$DIABETES)
+
+nhanes_summary_stats <- CreateTableOne(data = nhanes_df, strata = c("SEX"))
+
+```
+
+###   **Missing Data**
+
+```{r mytable}
+
+# Distribution of Missing Data for nhanes_df
+missing_df <- data.frame(
+  Variable = names(nhanes_df),
+  missing_count = sapply(nhanes_df, function(x) sum(is.na(x)))
+)
+
+# Calculate percent missing
+missing_df$percent_missing <- round(missing_df$missing_count / nrow(nhanes_df) * 100, 2)
+
+# Arrange by percent missing in descending order
+missing_df <- missing_df %>%
+  arrange(desc(percent_missing))
+
+# Select only those with missing records
+missing_df <- missing_df %>%
+  filter(missing_count > 0) 
+missing_df$missing_count <- round(missing_df$missing_count, 2)
+missing_df$percent_missing <- round(missing_df$percent_missing, 2)
+
+missing_df %>% 
+kable(caption = "Missing Data in Target Population", 
+      col.names = c("Variable", "Missing Count", "% Proportion"),
+        digits = 3,
+        booktabs = TRUE) %>% 
+ kable_styling(latex_options = c("HOLD_position", "striped"),
+              font_size=8)
+
+```
+
+
+The Brier score computation was based on the equation below as in the [@steingrimsson2023] paper.
+
+\[
+\text{BrierScore} = \frac{\sum_{i=1}^{n} \text{I}(S_i = 1, D_{\text{test},i} = 1){\phi} (X_i)(Y_i - g_{\hat{\beta}}(X_i))^2} {\sum_{i=1}^{n} \text{I}(S_i = 0, D_{\text{test},i} = 1)}
+\]
+
+
+```{r Impute for missing data in nhanes}
+# impute using mice package for nhanes df
+nhanes_df_mice_out <- mice::mice(nhanes_df, 5, pri=F)
+
+# Store each imputed data set
+nhanes_df_imp <- vector("list",5)    
+for (i in 1:5){
+   nhanes_df_imp[[i]] <- mice::complete(nhanes_df_mice_out,i) 
+   nhanes_df_imp <- nhanes_df_imp[[i]]
+}
+#nhanes_df_imp[[1]] # Example of accessing first imputed dataset
+
+# Add variables from Framingham to NHANES data 
+  nhanes_df_imp$SYSBP_UT <- ifelse(nhanes_df_imp$BPMEDS == 0, nhanes_df_imp$SYSBP, 0)
+  nhanes_df_imp$SYSBP_T <- ifelse(nhanes_df_imp$BPMEDS == 1, nhanes_df_imp$SYSBP, 0)
+  nhanes_df_imp$CVD <- NA
+```
+
+
+```{r Brier Score on NHANES data}
+# Initialize vectors for brier scores
+brier_scores_men <- numeric(length(nhanes_df_imp))
+brier_scores_women <- numeric(length(nhanes_df_imp))
+
+for (i in 1:5) {
+
+# Create source indicator
+  framingham_df$S <- 1
+  nhanes_df_imp$S <- 0
+  
+  # Find common variables in fram and nhanes and combine df
+  common_vars <- intersect(names(framingham_df), names(nhanes_df_imp))
+dat <- rbind(
+  subset(framingham_df, select = common_vars),
+  subset(nhanes_df_imp, select = common_vars)
+)
+
+  # Split to train and test on combined df
+  train_idx <- sample(c(TRUE, FALSE), nrow(dat), replace=TRUE, prob=c(0.7,0.3))
+train_df  <- dat[train_idx,]
+test_df   <- dat[!train_idx,]
+  
+  # Fit models with log transforms for all continuous variables
+  mod_men <- glm(CVD~log(HDLC)+log(TOTCHOL)+log(AGE)+log(SYSBP_UT+1)+
+                   log(SYSBP_T+1)+CURSMOKE+DIABETES, 
+        data = train_df[train_df$SEX == 1,], family="binomial")
+  
+  
+  mod_women <- glm(CVD~log(HDLC)+log(TOTCHOL)+log(AGE)+log(SYSBP_UT+1)+
+                     log(SYSBP_T+1)+CURSMOKE+DIABETES, 
+                 data = train_df[train_df$SEX == 2,], family="binomial")
+  
+  # Fit the logistic regression model for the probability of membership in framingham 
+   logit_s <- glm(S ~ log(HDLC) + log(TOTCHOL) + 
+                    log(AGE) + log(SYSBP_UT+1) + log(SYSBP_T+1) +
+                    CURSMOKE + DIABETES, 
+                  data = train_df, family= "binomial")
+  
+  # Get the probabilities
+  fram_prob <- predict(logit_s, newdata = test_df, type = "response")
+  
+  # Calculate the Inverse Odds Weights
+  test_df$inv_weights <- 1/(fram_prob/(1-fram_prob))
+  
+  # Framingham Test Data
+  dat_men_test <- test_df[test_df$S == 1 & test_df$SEX == 1,] 
+  dat_women_test <- test_df[test_df$S == 1 & test_df$SEX == 2,] 
+  
+  # Predict the probabilities of CVD for both men and women
+  men_preds <- predict(mod_men, newdata = dat_men_test, type = "response")
+  women_preds <- predict(mod_women, newdata = dat_women_test, type = "response")
+  
+  # Calculate the Brier score estimator for nhanes population for both gender
+  brier_scores_men[i] <- sum(dat_men_test$inv_weights*(men$CVD - men_preds)^2)/
+    nrow(test_df[test_df$S == 0 & test_df$SEX == 1,])
+  
+  brier_scores_women[i] <- sum(dat_women_test$inv_weights*(women$CVD - women_preds)^2)/
+    nrow(test_df[test_df$S == 0 & test_df$SEX == 2,])
+}
+
+# Combine results from all imputed datasets
+brier_score_men <- mean(brier_scores_men)
+brier_score_women <- mean(brier_scores_women)
+
+```
+
+
+
+```{r Brier Score on Frmaingham data}
+# Initialize vectors for brier scores
+brier_scores_men2 <- numeric(length(framingham_df))
+brier_scores_women2 <- numeric(length(framingham_df))
+
+for (i in 1:5) {
+
+# Create source indicator
+  framingham_df$S <- 1
+  nhanes_df_imp$S <- 0
+  
+  # Find common variables in fram and nhanes and combine df
+  common_vars <- intersect(names(framingham_df), names(nhanes_df_imp))
+dat <- rbind(
+  subset(framingham_df, select = common_vars),
+  subset(nhanes_df_imp, select = common_vars)
+)
+
+  # Split to train and test on combined df
+  train_idx <- sample(c(TRUE, FALSE), nrow(dat), replace=TRUE, prob=c(0.7,0.3))
+train_df  <- dat[train_idx,]
+test_df   <- dat[!train_idx,]
+  
+  # Fit models with log transforms for all continuous variables
+  mod_men <- glm(CVD~log(HDLC)+log(TOTCHOL)+log(AGE)+log(SYSBP_UT+1)+
+                   log(SYSBP_T+1)+CURSMOKE+DIABETES, 
+        data = train_df[train_df$SEX == 1,], family="binomial")
+  
+  
+  mod_women <- glm(CVD~log(HDLC)+log(TOTCHOL)+log(AGE)+log(SYSBP_UT+1)+
+                     log(SYSBP_T+1)+CURSMOKE+DIABETES, 
+                 data = train_df[train_df$SEX == 2,], family="binomial")
+  
+  # Fit the logistic regression model for the probability of membership in framingham 
+   logit_s <- glm(S ~ log(HDLC) + log(TOTCHOL) + 
+                    log(AGE) + log(SYSBP_UT+1) + log(SYSBP_T+1) +
+                    CURSMOKE + DIABETES, 
+                  data = train_df, family= "binomial")
+  
+  # Get the probabilities
+  fram_prob <- predict(logit_s, newdata = test_df, type = "response")
+  
+  # Calculate the Inverse Odds Weights
+  test_df$inv_weights <- 1/(fram_prob/(1-fram_prob))
+  
+  # Framingham Test Data
+  dat_men_test <- test_df[test_df$S == 1 & test_df$SEX == 1,] 
+  dat_women_test <- test_df[test_df$S == 1 & test_df$SEX == 2,] 
+  
+  # Predict the probabilities of CVD for both men and women
+  men_preds <- predict(mod_men, newdata = dat_men_test, type = "response")
+  women_preds <- predict(mod_women, newdata = dat_women_test, type = "response")
+  
+  # Calculate the Brier score estimator for nhanes population for both gender
+  brier_scores_men2[i] <- sum(dat_men_test$inv_weights*(dat_men_test$CVD - men_preds)^2)/
+    nrow(test_df[test_df$S == 0 & test_df$SEX == 1,])
+  
+  brier_scores_women2[i] <- sum(dat_women_test$inv_weights*(dat_women_test$CVD - women_preds)^2)/
+    nrow(test_df[test_df$S == 0 & test_df$SEX == 2,])
+}
+
+# Combine results from all imputed datasets
+brier_score_men2 <- mean(brier_scores_men2)
+brier_score_women2 <- mean(brier_scores_women2)
+
+```
+
+
+```{r}
+# Get the true brier estimates based on framingham as the true pop
+true_brier_men <- brier_score_men2
+true_brier_women <- brier_score_men2
+
+# Calculate bias
+bias_men <- brier_score_men - true_brier_men
+bias_women <- brier_score_women - true_brier_women
+
+# Calculate standard errors
+se_men <- sd(brier_scores_men2) / sqrt(length(brier_scores_men2))
+se_women <- sd(brier_scores_women2) / sqrt(length(brier_scores_women2))
+
+```
+
+
+```{r}
+# Create ROC curve for women
+roccurvewomen <- roc(dat_women_test$CVD, women_preds)
+
+# ROC curve for men
+roccurvemen <- roc(dat_men_test$CVD, men_preds)
+
+AUC_women <- roccurvewomen$auc
+AUC_men <- roccurvemen$auc
+```
+
+
+```{r mytables}
+
+# Combine results for men
+final_results_men <- data.frame(
+  Metric = c("Brier- NHANES", "Brier- Framingham", "Bias", "Standard Errors", "AUC"),
+  "Men Model" = c(brier_score_men, brier_score_men2, bias_men,se_men,AUC_men)
+)
+
+# Combine results for women
+final_results_women <- data.frame(
+  Metric = c("Brier- NHANES", "Brier- Framingham", "Bias","Standard Errors", "AUC"),
+  "Women Model" = c(brier_score_women, brier_score_women2, bias_women, se_women, AUC_women)
+)
+
+# Combine both men and women results
+final_results <- merge(final_results_men, final_results_women, by = "Metric")
+
+final_results %>% 
+kable(caption = "Model Evaluation on Non-Simulated Data", 
+      col.names = c("Metric", "Model for Men", "Model for Women"),
+        digits = 4,
+        booktabs = TRUE) %>% 
+ kable_styling(latex_options = c("HOLD_position", "striped"),
+              font_size=8)
+```
+
+```{r roccurves, fig.cap="ROC Curve for the Model on Non-Simulated data", out.width = "80%", include=FALSE}
+# Create ROC curves for men and women
+roc_data_men <- data.frame(
+  TPR = roccurvemen$sensitivities,
+  FPR = 1 - roccurvemen$specificities)
+
+# ROC curves for women
+roc_data_women <- data.frame(
+  TPR = roccurvewomen$sensitivities,
+  FPR = 1 - roccurvewomen$specificities)
+
+# ROC Plots
+ggplot() +
+  geom_line(data = roc_data_men, aes(x = FPR, y = TPR, color = "Men"), size = 1) +
+  geom_line(data = roc_data_women, aes(x = FPR, y = TPR, color = "Women"), size = 1, alpha = 0.3) +
+    geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "gray") +
+    labs(title = "ROC Curves for Predictive Model on Nhanes Population",
+       x = "False Positive Rate",
+       y = "True Positive Rate") +
+  scale_color_manual(values = c("lightblue", "red")) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+
+```
+
+
+```{r SimulateWomenData}
+# Generate data for women
+
+# Number of simulations
+num_sim <- 500
+
+# set parameters
+num_corr_vars = c(1,2,3,4)
+corrs = c(0, 0.3, 0.7, 0.9)
+n <- 1512
+means <- c(
+  SYSBP = 122.30,
+  AGE = 46.49,
+  BMI = 30.69,
+  HDLC = 57.72,
+  TOTCHOL = 195.22,
+  SYSBP_UT =  88.46,
+  SYSBP_T = 25.36
+)
+sds <- c(
+  SYSBP = 18.71,
+  AGE = 9.85,
+  BMI = 8.34,
+  HDLC = 16.22,
+  TOTCHOL = 38.06,
+  SYSBP_UT = 52.79,
+  SYSBP_T = 53.16
+)
+
+props <- c(
+  MCQ160E = 100.0,
+  MCQ160F = 100.0,
+  CURSMOKE = 16.3,
+  BPMEDS = 21.8,
+  DIABETES = 10.3
+)
+
+generate_continuous <- function(n, means, sds) {
+  continuous_list <- lapply(seq_along(means), function(j) {
+    m <- means[j]
+    sd <- sds[j]
+    df <- rnorm(n, m, sd)
+    
+    return(df)
+    
+  })
+  
+  return(continuous_list)
+}
+
+# apply correlation to continuous columns
+apply_correlation <- function(continuous_list, corr_any, num_corr_vars, corr) {
+  if (corr_any) {
+    corr_idxs <- sample(seq_along(continuous_list), num_corr_vars)
+    
+     # Generate a covariance matrix based on the correlation coefficient
+    Sigma <- matrix(corr, nrow = num_corr_vars, ncol = num_corr_vars)
+    Sigma[lower.tri(Sigma)] <- Sigma[upper.tri(Sigma)]
+    sim_dat <- mvrnorm(n = length(continuous_list[[1]]), mu = rep(0, num_corr_vars), Sigma = Sigma, empirical = TRUE)
+    
+    k <- 1
+    for (corr_idx in corr_idxs) {
+      rnk <- rank(sim_dat[, k], ties.method = "first")
+      sorted_dat <- sort(continuous_list[[corr_idx]])
+      continuous_list[[corr_idx]] <- sorted_dat[rnk]
+      k <- k + 1
+    }
+    rm(sim_dat)
+  }
+  return(continuous_list)
+}
+
+# generate individual data for women
+generate_women <- function(n, means, sds, props, corr_any, num_corr_vars, corr) {
+    CURSMOKE <- rbinom(n, 1, props["CURSMOKE"] / 100)
+    BPMEDS <- rbinom(n, 1, props["BPMEDS"] / 100)
+    DIABETES <- rbinom(n, 1, props["DIABETES"] / 100)
+
+  continuous_list <- generate_continuous(n, means, sds)
+  continuous_list <- apply_correlation(continuous_list, corr_any, length(continuous_list), corr)
+
+  continuous_df <- data.frame(
+    TOTCHOL = continuous_list[[1]],
+    SYSBP = continuous_list[[2]],
+    AGE = continuous_list[[3]],
+    HDLC = continuous_list[[4]],
+    SYSBP_UT = continuous_list[[5]], 
+    SYSBP_T = continuous_list[[6]]  
+  )
+
+  women_data <- data.frame(
+    SEX = rep(2, n),  # Only women (SEX = 2)
+    BPMEDS = BPMEDS,
+    CURSMOKE = CURSMOKE,
+    DIABETES = DIABETES,
+    continuous_df
+  )
+
+  return(women_data)
+}
+
+# Initialize an empty list to store simulation results
+simulation_W <- lapply(1:num_sim, function(i) {
+  
+  # Simulate individual pop for women with varying correlation
+  generate_women(1512, means, sds, props, TRUE, 3, 0.7)
+})
+```
+
+
+```{r SimulateMenData}
+
+## Generate Men data
+
+# Number of simulations
+num_sim <- 500
+
+# set parameters
+num_corr_vars = c(1,2,3,4)
+corrs = c(0, 0.3, 0.7, 0.9)
+n <- 1326
+means <- c(
+  SYSBP = 125.62,
+  AGE = 46.65,
+  BMI = 30.10,
+  HDLC = 47.78,
+  TOTCHOL = 194.01,
+  SYSBP_UT = 93.08,
+  SYSBP_T =  24.55
+)
+
+sds <- c(
+  SYSBP = 16.12,
+  AGE = 9.90,
+  BMI = 6.68,
+  HDLC = 14.74,
+  TOTCHOL = 40.21,
+  SYSBP_UT = 54.29,
+  SYSBP_T = 51.52
+)
+
+props<- c(
+  MCQ160E = 100.0,
+  MCQ160F = 100.0,
+  CURSMOKE = 25.7,
+  BPMEDS = 21.5,
+  DIABETES = 11.2
+)
+
+# generate continuous columns
+generate_continuous <- function(n, means, sds) {
+  continuous_list <- lapply(seq_along(means), function(j) {
+    m <- means[j]
+    s <- sds[j]
+    df <- rnorm(n, m, s)
+    
+    return(df)
+    
+  })
+  
+  return(continuous_list)
+}
+
+# apply correlation to continuous variables
+apply_correlation <- function(continuous_list,corr_any,num_corr_vars, corr) {
+  if (corr_any) {
+    corr_idxs <- sample(seq_along(continuous_list), num_corr_vars)
+    
+     # Generate a covariance matrix based on the correlation coefficient
+    Sigma <- matrix(corr, nrow = num_corr_vars, ncol = num_corr_vars)
+    Sigma[lower.tri(Sigma)] <- Sigma[upper.tri(Sigma)]
+    sim_dat <- mvrnorm(n = length(continuous_list[[1]]), mu = rep(0, num_corr_vars), Sigma = Sigma, empirical = TRUE)
+    
+    k <- 1
+    for (corr_idx in corr_idxs) {
+      rnk <- rank(sim_dat[, k], ties.method = "first")
+      sorted_dat <- sort(continuous_list[[corr_idx]])
+      continuous_list[[corr_idx]] <- sorted_dat[rnk]
+      k <- k + 1
+    }
+    rm(sim_dat)
+  }
+  return(continuous_list)
+}
+
+# generate individual data for men
+generate_men <- function(n, means, sds, props, corr_any, num_corr_vars, corr) {
+  CURSMOKE <- rbinom(n, 1, props["CURSMOKE"] / 100)
+  BPMEDS <- rbinom(n, 1, props["BPMEDS"] / 100)
+  DIABETES <- rbinom(n, 1, props["DIABETES"] / 100)
+
+  continuous_list <- generate_continuous(n, means, sds)
+  continuous_list <- apply_correlation(continuous_list, corr_any, length(continuous_list), corr)
+
+  continuous_df <- data.frame(TOTCHOL = continuous_list[[1]],
+                              SYSBP = continuous_list[[2]],
+                              AGE = continuous_list[[3]],
+                              HDLC = continuous_list[[4]],
+                              SYSBP_UT = continuous_list[[5]],
+                              SYSBP_T = continuous_list[[6]] 
+                              )
+
+  men_data <- data.frame(SEX = rep(1, n), 
+                         BPMEDS = BPMEDS,
+                         CURSMOKE = CURSMOKE,
+                         DIABETES = DIABETES,
+                         continuous_df
+                         )
+
+  return(men_data)
+  
+}
+
+# Initialize an empty list to store simulation results
+simulation_M <- lapply(1:num_sim, function(i) {
+  # Simulate individual pop for men with varying correlation
+  generate_men(1326, means, sds, props, TRUE, 3, 0.7)
+})
+
+```
+
+
+```{r Brier Scores on NHANES simulated}
+# convert simulated list to df
+simM_df <- as.data.frame(simulation_M)
+simW_df <- as.data.frame(simulation_W)
+
+# combine dfs for summary stats
+simM_simW_df <- bind_rows(simM_df,simW_df)
+simM_simW_df$CVD <- NA
+
+# Initialize vectors for brier scores
+brier_scores_men_sim <- numeric(length(simulation_M))
+brier_scores_women_sim <- numeric(length(simulation_W))
+
+for (i in 1:num_sim) {
+
+# Create source indicator
+  framingham_df$S <- 1
+  simM_simW_df$S <- 0
+  
+  # Find common variables in fram and nhanes and combine df
+  common_vars <- intersect(names(framingham_df), names(simM_simW_df))
+dat <- rbind(
+  subset(framingham_df, select = common_vars),
+  subset(simM_simW_df, select = common_vars)
+)
+
+dat <- na.omit(dat)
+  # Split to train and test on combined df
+  train_idx <- sample(c(TRUE, FALSE), nrow(dat), replace=TRUE, prob=c(0.7,0.3))
+train_df  <- dat[train_idx,]
+test_df   <- dat[!train_idx,]
+  
+  # Fit models with log transforms for all continuous variables
+  mod_men <- glm(CVD~log(HDLC)+log(TOTCHOL)+log(AGE)+log(SYSBP_UT+1)+
+                   log(SYSBP_T+1)+CURSMOKE+DIABETES, 
+        data = train_df[train_df$SEX == 1,], family="binomial")
+  
+  
+  mod_women <- glm(CVD~log(HDLC)+log(TOTCHOL)+log(AGE)+log(SYSBP_UT+1)+
+                     log(SYSBP_T+1)+CURSMOKE+DIABETES, 
+                 data = train_df[train_df$SEX == 2,], family="binomial")
+  
+  # Fit the logistic regression model for the probability of membership in framingham 
+   logit_s <- glm(S ~ log(HDLC) + log(TOTCHOL) + 
+                    log(AGE) + log(SYSBP_UT+1) + log(SYSBP_T+1) +
+                    CURSMOKE + DIABETES, 
+                  data = train_df, family= "binomial")
+   
+  # Get the probabilities
+  fram_prob <- predict(logit_s, newdata = test_df, type = "response")
+  
+  # Calculate the Inverse Odds Weights
+  test_df$inv_weights <- 1/((fram_prob)/(1-fram_prob))
+  
+  # Framingham Test Data
+  dat_men_test <- test_df[test_df$S == 1 & test_df$SEX == 1,] 
+  dat_women_test <- test_df[test_df$S == 1 & test_df$SEX == 2,] 
+  
+  # Predict the probabilities of CVD for both men and women
+  men_preds <- predict(mod_men, newdata = dat_men_test, type = "response")
+  women_preds <- predict(mod_women, newdata = dat_women_test, type = "response")
+  
+  # Calculate the Brier score estimator for nhanes population for both gender
+  brier_scores_men_sim[i] <- sum(dat_men_test$inv_weights*(dat_men_test$CVD - men_preds)^2)/(nrow(test_df[test_df$S == 0 & test_df$SEX == 1,]) + 1e-6) 
+  
+  brier_scores_women_sim[i] <- sum(dat_women_test$inv_weights*(dat_women_test$CVD - women_preds)^2)/ (nrow(test_df[test_df$S == 0 & test_df$SEX == 2,]) + 1e-6) 
+}
+
+# Combine results from all imputed datasets
+brier_score_men_sim <- mean(brier_scores_men_sim)
+brier_score_women_sim <- mean(brier_scores_women_sim)
+
+```
+
+
+```{r Brier Score on Framingham}
+# convert simulated list to df
+simM_df <- as.data.frame(simulation_M)
+simW_df <- as.data.frame(simulation_W)
+
+# combine dfs for summary stats
+simM_simW_df <- bind_rows(simM_df,simW_df)
+simM_simW_df$CVD <- NA
+
+# Initialize vectors for brier scores on framing data
+brier_scores_men_sim2 <- numeric(length(framingham_df))
+brier_scores_women_sim2 <- numeric(length(framingham_df))
+
+for (i in 1:num_sim) {
+
+# Create source indicator
+  framingham_df$S <- 1
+  simM_simW_df$S <- 0
+  
+  # Find common variables in fram and nhanes and combine df
+  common_vars <- intersect(names(framingham_df), names(simM_simW_df))
+dat <- rbind(
+  subset(framingham_df, select = common_vars),
+  subset(simM_simW_df, select = common_vars)
+)
+
+dat <- na.omit(dat)
+  # Split to train and test on combined df
+  train_idx <- sample(c(TRUE, FALSE), nrow(dat), replace=TRUE, prob=c(0.7,0.3))
+train_df  <- dat[train_idx,]
+test_df   <- dat[!train_idx,]
+  
+  # Fit models with log transforms for all continuous variables
+  mod_men <- glm(CVD~log(HDLC)+log(TOTCHOL)+log(AGE)+log(SYSBP_UT+1)+
+                   log(SYSBP_T+1)+CURSMOKE+DIABETES, 
+        data = train_df[train_df$SEX == 1,], family="binomial")
+  
+  
+  mod_women <- glm(CVD~log(HDLC)+log(TOTCHOL)+log(AGE)+log(SYSBP_UT+1)+
+                     log(SYSBP_T+1)+CURSMOKE+DIABETES, 
+                 data = train_df[train_df$SEX == 2,], family="binomial")
+  
+  # Fit the logistic regression model for the probability of membership in framingham 
+   logit_s <- glm(S ~ log(HDLC) + log(TOTCHOL) + 
+                    log(AGE) + log(SYSBP_UT+1) + log(SYSBP_T+1) +
+                    CURSMOKE + DIABETES, 
+                  data = train_df, family= "binomial")
+   
+  # Get the probabilities
+  fram_prob <- predict(logit_s, newdata = test_df, type = "response")
+  
+  # Calculate the Inverse Odds Weights
+  test_df$inv_weights <- 1/((fram_prob)/(1-fram_prob))
+  
+  # Framingham Test Data
+  dat_men_test <- test_df[test_df$S == 1 & test_df$SEX == 1,] 
+  dat_women_test <- test_df[test_df$S == 1 & test_df$SEX == 2,] 
+  
+  # Predict the probabilities of CVD for both men and women
+  men_preds <- predict(mod_men, newdata = dat_men_test, type = "response")
+  women_preds <- predict(mod_women, newdata = dat_women_test, type = "response")
+  
+  # Introduce random noise to predictions
+  #men_preds <- men_preds + rnorm(length(men_preds), mean = 0, sd = 0.01)
+  #women_preds <- women_preds + rnorm(length(women_preds), mean = 0, sd = 0.01)
+  
+  # Calculate the Brier score estimator for nhanes population for both gender
+  brier_scores_men_sim2[i] <- sum(dat_men_test$inv_weights*(dat_men_test$CVD - men_preds)^2)/(nrow(test_df[test_df$S == 0 & test_df$SEX == 1,]) + 1e-6) 
+  
+  brier_scores_women_sim2[i] <- sum(dat_women_test$inv_weights*(dat_women_test$CVD - women_preds)^2)/ (nrow(test_df[test_df$S == 0 & test_df$SEX == 2,]) + 1e-6) 
+}
+
+# Combine results from all imputed datasets
+brier_score_men_sim2 <- mean(brier_scores_men_sim2)
+brier_score_women_sim2 <- mean(brier_scores_women_sim2)
+
+```
+
+
+
+```{r BiasAndStandardErrors}
+# Get the true brier estimates based on framingham as the true pop for simulated df
+true_brier_men2 <- brier_score_men_sim2
+true_brier_women2 <- brier_score_women_sim2
+
+# Calculate bias
+bias_men2 <- brier_score_men_sim - true_brier_men2
+bias_women2 <- brier_score_women_sim - true_brier_women2
+
+# Calculate standard errors
+se_men2 <- sd(brier_score_men_sim2) / sqrt(length(brier_score_men_sim2))
+se_women2 <- sd(brier_score_women_sim2) / sqrt(length(brier_score_women_sim2))
+
+```
+
+
+```{r AUC measures}
+# Create ROC curve for women
+roccurvewomen2 <- roc(dat_women_test$CVD, women_preds)
+
+# ROC curve for men
+roccurvemen2 <- roc(dat_men_test$CVD, men_preds)
+
+AUC_women2 <- roccurvewomen2$auc
+AUC_men2 <- roccurvemen2$auc
+```
+
+
+```{r}
+# Combine results for men
+final_results_men2 <- data.frame(
+  Metric = c("Brier- Simulated",  "Bias",  "AUC"),
+  "Men Model" = c(brier_score_men_sim, bias_men2,AUC_men2)
+)
+
+
+# Combine results for women
+final_results_women2 <- data.frame(
+  Metric = c("Brier- Simulated", "Bias","AUC"),
+  "Women Model" = c(brier_score_women_sim, bias_women2, AUC_women2)
+)
+
+# Combine both men and women results
+final_results <- merge(final_results_men2, final_results_women2, by = "Metric")
+
+final_results %>% 
+kable(caption = "Model Evaluation on Simulated Data", 
+      col.names = c("Metric", "Model for Men", "Model for Women"),
+        #digits = 4,
+        booktabs = TRUE) %>% 
+ kable_styling(latex_options = c("HOLD_position", "striped"),
+              font_size=8)
+```
+
+```{r summarytable}
+# summary output table for nhanes data
+summary_table <- nhanes_df %>%
+  select(-SEQN) %>%
+  tbl_summary(missing = "no", by = SEX,
+              statistic = all_continuous() ~ "{mean} ({sd} {min}, {max})")%>% 
+  as_gt() %>%
+  gt::tab_header(title = "Table 3. Summary Statistics for Nhanes Data",
+                 subtitle = "Stratified by Sex")
+summary_table
+```
+
+
+```{r mysummarytable, include=FALSE}
+# summary output table for simulated data
+summary_table1 <- simM_simW_df %>%
+  #select(-S) %>%
+  tbl_summary(
+    by = SEX, 
+    statistic = all_continuous() ~ "{mean} ({sd} {min}, {max})"
+  ) %>%
+  as_gt() %>%
+  gt::tab_header(
+    title = "Table 4. Summary Statistics Across Simulations",
+    subtitle = "Stratified by Sex"
+  )
+
+# Print output
+summary_table1
+
+```
+
+
+```{r roccurves2, fig.cap="ROC Curve for Model on Simulated data", out.width = "80%", include=FALSE}
+
+roc_curve_women <- roc(dat_women_test$CVD, women_preds)
+roc_auc_women <- auc(roc_curve_women)
+
+roc_curve_men <- roc(dat_men_test$CVD, men_preds)
+roc_auc_men <- auc(roc_curve_men)
+
+# Create ROC curves for men and women
+roc_data_men2 <- data.frame(
+  TPR = roc_curve_men$sensitivities,
+  FPR = 1 - roc_curve_men$specificities)
+
+# ROC curves for women
+roc_data_women2 <- data.frame(
+  TPR = roc_curve_women$sensitivities,
+  FPR = 1 - roc_curve_women$specificities)
+
+# AUC 
+auc_label_men <- sprintf("Men AUC = %.2f", roc_auc_men)
+auc_label_women <- sprintf("Women AUC = %.2f", roc_auc_women)
+
+# ROC Plots
+ggplot() +
+  geom_line(data = roc_data_men2, aes(x = FPR, y = TPR, color = "Men"), size = 1, alpha = 0.7) +
+  geom_line(data = roc_data_women2, aes(x = FPR, y = TPR, color = "Women"), size = 1, alpha = 0.7) +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "gray") +
+  labs(title = "ROC Curves on Simulated Data",
+    x = "False Positive Rate",
+    y = "True Positive Rate") +
+  scale_color_manual(values = c("lightblue", "red")) +
+  theme_minimal() +
+  theme(legend.position = "bottom") +
+  annotate("text",x = 0.5,y = 0.75,label = auc_label_men,
+           color = "black", hjust = 0,vjust = 1) +
+  annotate("text",x = 0.5,y = 0.45,label = auc_label_women,
+           color = "red",hjust = 0,vjust = 1)
+
+```
+
+
+\newpage
+
+
+##    **References**
+
+
+<div id="refs"></div>
+
+\newpage
+
+## **Code Appendix**
+
+```{r ref.label=knitr::all_labels(), echo=TRUE, eval=FALSE}
+```
+
+
+
