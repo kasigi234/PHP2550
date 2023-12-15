@@ -13,8 +13,31 @@ This project focused on developing regression models to predict the need for tra
 
 ![image](https://github.com/kasigi234/PHP2550/assets/132590202/3d834460-fb3e-47c1-88b5-4dcdd64f76f9)
 
-![image](https://github.com/kasigi234/PHP2550/assets/132590202/c8d3834a-2c46-4501-ab96-24907c62a072)
+## Transportability of Prediction Models in Diverse Populations (Simulated and Non-simulated Target Population)
+Collaboration with Dr. Jon Steingrimsson of Brown University
 
+In this project we were looking into how well prediction models work when we move them from one population where they were developed in to another different population. We also were interested in seeing how the same model will also perform in a simulated population that mimics the target population. For this project the target population that we were interested in did not have the outcome.  We used data from the Framingham Heart Study to predict the risk of heart disease in the NHANES group. Even though NHANES didn't have possess the outcome which was CVD. In order to transport the measures from our prediction model we ensured the positivity of the likelihood of being in the Framingham population for each covariate pattern in NHANES. To apply the prediction model and assess its performance in the target population, we employed inverse-odds weights to obtain brier score estimands, estimating the probability of belonging to the Framingham (source) population based on covariates statistics from the target population. We then used the Brier scores to obtain the evaluation metrics such as bias and standard errors.
+
+The Inverse weights were obtained as below:
+![image](https://github.com/kasigi234/PHP2550/assets/132590202/05d5cc94-34f2-4d5b-a14c-54b4ef5d391f)
+
+and the Brier scores as below:
+![image](https://github.com/kasigi234/PHP2550/assets/132590202/c9489795-8d44-44ad-8c64-9eeddac3b7ec)
+
+In the evaluation phase, we used bias and standard errors to assess the performance of the transported prediction model, considering the Framingham data with outcome and the NHANES data without it.
+
+
+we obtained the brier score estimator that was used as a measure of the models performance.based on the probability of being in the target population given the source population. to obtain the 
+
+
+
+
+ We found that our prediction model worked okay, even when we didn't have all the data we wanted. This is important because it helps us make good decisions even when doing real-world tests is hard. Our study tells us how well our predictions work for heart disease in different groups of people. Check out what we did to see how you can use these predictions in your work.
+
+In our study, we figured out a way to use just the important info to make predictions for the new group.
+
+
+In the realm of predictive modeling, the challenge of assessing model performance across populations with varying levels of outcome information has prompted our investigation into the transportability of prediction models. With a focus on scenarios where detailed outcome data are lacking in the target population, we propose a novel methodology leveraging summary statistics for model transport. Drawing from the Framingham Heart Study and applying logistic risk models, our research predicts cardiovascular heart disease risk within the NHANES population. Through a transparent simulation study adhering to ADEMP principles, we extend prediction scores from Framingham to a simulated NHANES target population, showcasing the potential for predictive model applicability in diverse settings. Despite lacking long-term outcomes in NHANES, our comprehensive approach, including eligibility criteria alignment and inverse odds weighting, results in a predictive model exhibiting a moderate level of accuracy and good calibration. Simulations offer valuable insights into evidence-based decision-making, especially when real-world experiments are challenging. Our analysis sheds light on logistic regression model performance in predicting cardiovascular disease across different populations, providing a foundation for broader application and generalization. Explore our methodology and findings to enhance your understanding of predictive model transportability.
 
 
 
