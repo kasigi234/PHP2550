@@ -9,3 +9,12 @@ This project focused on investigating the impact of prenatal tobacco exposure on
 ## Project 2:Developing a Predictive Model for Timing and Indication for Tracheostomy Need in Neonates with Severe Bronchopulmonary Dysplasia
 Collaboration with Dr. Chris Schimd
 
+This project focused on developing regression models to predict the need for tracheostomy placement in neonates with severe bronchopulmonary dysplasia (sBPD). With extended ventilation becoming a common practice for infants surviving sBPD, the timing and criteria for tracheostomy placement remain unknown in pediatric care. We utilized the data from the BPD Collaborative Registry, respiratory parameters and demographic information collected at 36 and 44 weeks to build the models. These were the first models that considered respiratory parameters and postmenstrual ages, to provide models that could be used for clinical decision-making in the management of neonates with sBDP. In the analysis we used a trained generalized linear mixed-effects regression model, with Lasso being utilized for variable selection. The resulting prediction model demonstrates promising performance with an AUC of approximately 0.895 and 0.92 with the 36 and 44 weeks, respectively. Sensitivity (0.76), specificity (0.89), and overall accuracy (0.88) showed that we could rely on the 36 weeks model in identifying infants who may truly benefit from tracheostomy placement. 
+
+![image](https://github.com/kasigi234/PHP2550/assets/132590202/3d834460-fb3e-47c1-88b5-4dcdd64f76f9)
+
+![image](https://github.com/kasigi234/PHP2550/assets/132590202/39cb71da-6c98-4897-837c-e6d51f2f1506)
+
+
+
+
