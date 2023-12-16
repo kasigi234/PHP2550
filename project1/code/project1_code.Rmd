@@ -1,0 +1,457 @@
+---
+title: "PDA Project1"
+author: 'Due: October 8 by 11.59pm'
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message=FALSE, 
+                      warning=FALSE, 
+                      error=FALSE, 
+                      echo = FALSE, 
+                      fig.pos = "H" ,
+                      fig.align = 'center')
+```
+
+
+```{r load required libraries}
+
+# libraries to be used 
+#install.packages("kableExtra")
+library(gtsummary)
+library(tidyverse)
+library(kableExtra)
+library(knitr)
+library(tidyr)
+library(naniar)
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(tableone)
+library(dplyr)
+library(lattice)
+library(reshape2)
+library(formatR)
+#library(summarytools)
+#library(broom)
+
+```
+
+
+```{r}
+
+# Data cleaning
+
+# variable transformation
+project_data$psex <- as.factor(project_data$psex)
+project_data$plang <- as.factor(project_data$plang)
+project_data$pethnic <- as.factor(project_data$pethnic)
+project_data$paian <- as.factor(project_data$paian)
+project_data$pasian <- as.factor(project_data$pasian)
+project_data$pnhpi <- as.factor(project_data$pnhpi)
+project_data$pblack <- as.factor(project_data$pblack)
+project_data$pwhite <- as.factor(project_data$pwhite)
+project_data$prace_other <- as.factor(project_data$prace_other)
+project_data$employ <- as.factor(project_data$employ)
+project_data$pedu <- as.factor(project_data$pedu)
+project_data$childasd <- as.factor(project_data$childasd)
+project_data$nidaalc <- as.factor(project_data$nidaalc)
+project_data$nidatob <- as.factor(project_data$nidatob)
+project_data$nidapres  <- as.factor(project_data$nidapres)
+project_data$nidaill <- as.factor(project_data$nidaill)
+project_data$mom_smoke_16wk <- as.factor(project_data$mom_smoke_16wk)
+project_data$mom_smoke_22wk <- as.factor(project_data$mom_smoke_22wk)
+project_data$mom_smoke_32wk <- as.factor(project_data$mom_smoke_32wk)
+project_data$mom_smoke_pp1 <- as.factor(project_data$mom_smoke_pp1)
+project_data$mom_smoke_pp2 <- as.factor(project_data$mom_smoke_pp2)
+project_data$mom_smoke_pp12wk <- as.factor(project_data$mom_smoke_pp12wk)
+project_data$mom_smoke_pp6mo <- as.factor(project_data$mom_smoke_pp6mo)
+project_data$smoke_exposure_6mo <- as.factor(project_data$smoke_exposure_6mo)
+project_data$smoke_exposure_12mo <- as.factor(project_data$smoke_exposure_12mo)
+project_data$smoke_exposure_2yr <- as.factor(project_data$smoke_exposure_2yr)
+project_data$smoke_exposure_3yr <- as.factor(project_data$smoke_exposure_3yr)
+project_data$smoke_exposure_4yr <- as.factor(project_data$smoke_exposure_4yr)
+project_data$tsex <- as.factor(project_data$tsex)
+project_data$language <- as.factor(project_data$language)
+project_data$tethnic <- as.factor(project_data$tethnic)
+project_data$alc_ever <- as.factor(project_data$alc_ever)
+project_data$mj_ever <- as.factor(project_data$mj_ever)
+project_data$e_cig_ever <- as.factor(project_data$e_cig_ever)
+project_data$cig_ever <- as.factor(project_data$cig_ever)
+project_data$taian <- as.factor(project_data$taian)
+project_data$tasian <- as.factor(project_data$tasian)
+project_data$tnhpi <- as.factor(project_data$tnhpi)
+project_data$tblack <- as.factor(project_data$tblack)
+project_data$twhite <- as.factor(project_data$twhite)
+project_data$trace_other <- as.factor(project_data$trace_other)
+project_data$smoke_exposure_5yr <- as.factor(project_data$smoke_exposure_5yr)
+project_data$momcig <- as.numeric(project_data$momcig)
+project_data$mom_numcig <- as.numeric(project_data$mom_numcig)
+project_data$income <- as.numeric(project_data$income)
+project_data$cotimean_34wk <- as.numeric(project_data$cotimean_34wk)
+project_data$cotimean_pp6mo <- as.numeric(project_data$cotimean_pp6mo)
+project_data$cotimean_pp6mo_baby <- as.numeric(project_data$cotimean_pp6mo_baby)
+
+#project_data$mom_smoke_16wk <- as.numeric(project_data$mom_smoke_16wk)
+#project_data$cmom_smoke_22wk <- as.numeric(project_data$mom_smoke_22wk)
+#project_data$mom_smoke_32wk <- as.numeric(project_data$mom_smoke_32wk)
+
+
+# blank values to NA
+project_data[project_data == ""] <- NA
+
+# change the income input 
+project_data$income[6] <- 250000
+project_data$income[1] <- 76000
+
+# handle the outlier value on momcig 
+project_data$momcig[31] <- 4
+
+# replace the erronously recorded value with NA
+project_data[1, "mom_numcig"] <- 2
+project_data[26, "mom_numcig"] <- NA # 44489
+project_data[37, "mom_numcig"] <- 23  # 20-25
+project_data[47, "mom_numcig"] <- NA  # none
+
+# update 'num_cig_30' column to show true values
+project_data <- project_data %>% mutate(num_cigs_30 = 
+                                          case_when(cig_ever == 0 ~ 0,                               
+                                          cig_ever == 1 ~ num_cigs_30,
+                                          TRUE ~ NA))
+# update 'num_e_cig_30' column
+project_data <- project_data %>% mutate(num_e_cigs_30 = case_when(e_cig_ever == 0 ~ 0,
+                                        e_cig_ever == 1 ~ num_e_cigs_30,
+                                        TRUE ~ NA))
+# update 'num_mj_30' column
+project_data <- project_data %>% mutate(num_mj_30 = case_when(mj_ever == 0 ~ 0,
+                                        mj_ever == 1 ~ num_mj_30,
+                                        TRUE ~ NA))
+# update 'num_alc_30' column
+project_data <- project_data %>% mutate(num_alc_30 = case_when(alc_ever == 0 ~ 0,
+                                        alc_ever == 1 ~ num_alc_30,
+                                        TRUE ~ NA))
+
+```
+
+###   **2.2 Missing Data**
+
+
+```{r}
+# summary statistics for missing data 
+missing_data <- data.frame(
+  Variable = names(project_data),
+  Missing_Count = sapply(project_data, function(x) sum(is.na(x)))
+)
+missing_data$Percentage_Missing <- missing_data$Missing_Count / nrow(project_data) * 100
+missing_data <- missing_data %>%
+  arrange(desc(Percentage_Missing))
+
+# Remove row names
+rownames(missing_data) <- NULL
+
+# variables with missing values above 25%
+missing_data_only <- missing_data %>%
+  filter(Percentage_Missing > 25)
+project_missing <- naniar::miss_var_summary(project_data, order = FALSE) 
+project_missing$pct_miss <- round(project_missing$pct_miss, 2)
+missing_data_only$Missing_Count <- round(missing_data_only$Missing_Count, 2)
+
+missing_data_only$Percentage_Missing <- round(missing_data_only$Percentage_Missing, 2)
+
+missing_data_only %>% 
+kable(caption = "Variables with above 25% Missing Data", 
+      col.names = c("Variable", "Proportion (%)", "n"),
+        digits = 4,
+        booktabs = TRUE) %>% 
+ kable_styling(full_width = F,latex_options = c("HOLD_position", "striped"),
+              font_size=9)
+
+```
+
+
+
+##    **3. Analysis**
+
+###   **3.1 Demographic summary statistics**
+
+```{r}
+
+# summary table for demographic characteristics
+tbl_summary_demographic <-  project_data %>%
+  select(page,pedu,employ,tage , tsex, prace_other, trace_other) %>%
+  tbl_summary(missing = "no", 
+              label = list(page = "Mom Age", pedu = "Mom Education", employ = "Mom Employed",tage = "Child Age" , tsex = "Child Sex", prace_other = "Mom Other Race", trace_other = "Child Other Race")) 
+
+# change tbl_summary to a data frame
+data_frame <- tbl_summary_demographic %>%
+  as_tibble()
+column_names <- c("Variable", "N = 49") 
+colnames(data_frame) <- column_names
+
+# for nicer display
+kable_tbl <- data_frame %>%
+ kable(caption = "Demographic Characteristics", 
+      col.names = c("Variable", "N = 49"),
+        digits = 4,
+        booktabs = TRUE) %>% 
+ kable_styling(full_width = F,latex_options = c("HOLD_position", "striped"),
+              font_size=9)
+
+kable_tbl
+
+```
+
+
+```{r Interrelatedness of SDP and ETS}
+# Standardize cotinine variable for mom and child
+mom_cotimean_34_z <- abs(log(scale(project_data$cotimean_34wk)))
+mom_cotimean_6mo_z <- abs(log(scale(project_data$cotimean_pp6mo)))
+child_cotimean_6mo_z <-abs(log(scale(project_data$cotimean_pp6mo_baby)))
+
+# calculate composite scores for SDP variable
+project_data$SDP <- with(project_data, 
+                         rowMeans(cbind(mom_numcig, mom_smoke_16wk, 
+                                        mom_smoke_22wk, mom_smoke_32wk, 
+                                        mom_cotimean_34_z),na.rm = TRUE))
+
+# calculate composite scores for ETS variable
+project_data$ETS <- with(project_data, 
+                         rowMeans(cbind(mom_smoke_pp1, mom_smoke_pp2, 
+                                        mom_smoke_pp12wk, mom_smoke_pp6mo, 
+                                        smoke_exposure_6mo, smoke_exposure_12mo, 
+                                        smoke_exposure_2yr, smoke_exposure_3yr,
+                                        smoke_exposure_4yr,
+                                        smoke_exposure_5yr,mom_cotimean_6mo_z,
+                                        child_cotimean_6mo_z),na.rm = TRUE))
+
+
+```
+
+```{r, include=FALSE}
+# correlation matrix for SDP  and ETS
+correlation_matrix_b <- cor(project_data[c("SDP", "ETS")], use ="complete.obs")
+
+# reshape the correlation matrix for ggplot
+melted_cor_matrix_b <- melt(correlation_matrix_b)
+
+# correlation matrix visual
+ggplot(melted_cor_matrix_b, aes(Var1, Var2, fill = value)) +
+  geom_tile() +
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white",
+                       midpoint = 0, limit = c(-1, 1), space = "Lab", 
+                        name = "Correlation") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 1,
+                                   size = 5, hjust = 1), 
+        axis.text.y = element_text(size = 5)) +
+  labs(x = NULL, y = NULL, fill = "Correlation") +
+  coord_fixed() +
+  ggtitle("SDP and ETS matrix")+
+  labs(caption = "Figure 1: SDP vs ETS Correlation Matrix") 
+```
+
+
+```{r}
+# SDP versus ETS
+ggplot(project_data, aes(x = SDP, y = ETS)) +
+  geom_point(size = 1, alpha = 0.7, color = "green") +
+  geom_smooth(method = "lm", se = FALSE, size = 1.2, 
+              linetype = "solid", color = "red") +
+  labs(title = "Effect of Environmental tobacco smoking on SR",
+       x = "Smoking During Pregnancy",
+       y = "Environmental Tobacco Smoking") +
+  theme_minimal() +
+  labs(caption = "Figure 1: Association between ETS and SDP")
+```
+
+
+```{r}
+# correlation matrix for SR/EXT
+correlation_matrix_out <- cor(project_data[c("bpm_att", "bpm_ext", "bpm_att_p", "bpm_ext_p", "swan_inattentive", "swan_hyperactive","erq_exp","erq_cog","bpm_int", "bpm_int_p")], use ="complete.obs")
+
+# reshape the correlation matrix for ggplot
+melted_cor_matrix_out <- melt(correlation_matrix_out)
+
+# correlation matrix visual
+ggplot(melted_cor_matrix_out, aes(Var1, Var2, fill = value)) +
+  geom_tile() +
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white",
+                       midpoint = 0, limit = c(-1, 1), space = "Lab", 
+                       #breaks = seq(-1, 1, by = 0.5)) +
+                       name = "Correlation") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 1,
+                                   size = 5, hjust = 1), 
+        axis.text.y = element_text(size = 5)) +
+  labs(x = NULL, y = NULL, fill = "Correlation") +
+  coord_fixed() +
+  ggtitle("Matrix for Outcome ")+
+  labs(caption = "Figure 2: Correlation Matrix") 
+```
+
+
+```{r}
+
+# Standardize SR, EXT variables for child
+bpm_att_z = abs(scale(project_data$bpm_att))
+bpm_ext_z = abs(scale(project_data$bpm_ext))
+bpm_int_z = abs(scale(project_data$bpm_int))
+erq_cog_z = abs(scale(project_data$erq_cog))
+erq_exp_z = abs(scale(project_data$erq_exp)) 
+erq_cog_a_z = abs(scale(project_data$erq_cog_a)) # exclude parent
+erq_exp_a_z = abs(scale(project_data$erq_exp_a)) # exclude parent
+bpm_att_p_z = abs(scale(project_data$bpm_att_p))
+bpm_ext_p_z = abs(scale(project_data$bpm_ext_p))
+bpm_int_p_z = abs(scale(project_data$bpm_int_p))
+bpm_att_a_z = abs(scale(project_data$bpm_att_a)) # exclude parent
+bpm_ext_a_z = abs(scale(project_data$bpm_ext_a)) # exclude parent
+bpm_int_a_z = abs(scale(project_data$bpm_int_a)) # exclude parent
+swan_hyperactive_z = abs(scale(project_data$swan_hyperactive))
+swan_inattentive_z = abs(scale(project_data$swan_inattentive))
+
+# calculate composite scores for self regulation variable
+project_data$SR <- with(project_data, 
+                        rowMeans(cbind(erq_cog_z, erq_exp_z, bpm_int_p_z, 
+                                       bpm_int_z),na.rm = TRUE))
+
+# calculate composite scores for externalizing variable
+project_data$EXT <- with(project_data, 
+                         rowMeans(cbind(bpm_att_z, bpm_ext_z, bpm_att_p_z,
+                                        bpm_ext_p_z, swan_inattentive_z, swan_hyperactive_z),na.rm = TRUE))
+
+# composite for substance use variable
+project_data$SU <- with(project_data,
+                        ifelse(cig_ever == 1 | e_cig_ever == 1 | 
+                                 mj_ever == 1 | alc_ever == 1, 1, 0))
+
+
+## variables for the outcome variables
+df_outcomes = project_data %>% 
+  select(bpm_att, bpm_ext, bpm_att_p, bpm_ext_p, swan_inattentive,erq_cog, erq_exp, swan_hyperactive)
+
+# correlation matrix for interrelatedness externalizing variables
+correlation_matrix <- cor(project_data[c("bpm_att", "bpm_ext", 
+                                         "bpm_att_p","bpm_ext_p", "swan_inattentive", 
+                                         "swan_hyperactive")], use = "pairwise.complete.obs")
+
+# correlation matrix for interrelatedness self regulation
+correlation_matrix2 <- cor(project_data[c("erq_exp", "erq_cog", "bpm_int", "bpm_int_p")], 
+                           use = "pairwise.complete.obs")
+
+
+```
+
+###   3.3.2 Interrelatedness of the externalizing and self regulate behaviors in children
+```{r, include=FALSE}
+# correlation matrix for SR/EXT
+#correlation_matrix <- cor(project_data[c("EXT", "SU", "SR", 
+                            # "SDP", "EXT")], use ="complete.obs")
+# correlation matrix for SR/EXT
+correlation_matrix_c <- cor(project_data[c("EXT", "SR")], use ="complete.obs")
+
+# reshape the correlation matrix for ggplot
+melted_cor_matrix_c <- melt(correlation_matrix_c)
+
+# correlation matrix visual
+ggplot(melted_cor_matrix_c, aes(Var1, Var2, fill = value)) +
+  geom_tile() +
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white",
+                       midpoint = 0, limit = c(-1, 1), space = "Lab", 
+                       #breaks = seq(-1, 1, by = 0.5)) +
+                       name = "Correlation") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 1,
+                                   size = 5, hjust = 1), 
+        axis.text.y = element_text(size = 5)) +
+  labs(x = NULL, y = NULL, fill = "Correlation") +
+  coord_fixed() +
+  ggtitle("EXT vs SR Correlation Matrix")+
+  labs(caption = "Figure 3: EXT/SR Matrix") 
+```
+
+```{r}
+# ETS on self regulation
+ggplot(project_data, aes(x = ETS, y = SR)) +
+  geom_point(size = 1, alpha = 0.7, color = "green") +
+  geom_smooth(method = "lm", se = FALSE, size = 1.2, 
+              linetype = "solid", color = "red") +
+  labs(title = "Effect of Environmental tobacco smoking on SR",
+       x = "Environmental Tobacco Smoking",
+       y = "Self Regulation Problems") +
+  theme_minimal() +
+  labs(caption = "Figure 3: Effect of Environmental Tobacco Smoking on self Regulation")
+```
+
+
+```{r Effect of ETS on Externalizing problems}
+
+# ETS on Externalizing problems
+ggplot(project_data, aes(x = ETS, y = EXT)) +
+  geom_point(size = 1, alpha = 0.7, color = "green") +
+  geom_smooth(method = "lm", se = FALSE, size = 1.2, 
+              linetype = "solid", color = "red") +
+  labs(title = "Effect of Environmental tobacco smoking on EXT",
+       x = "Environmental Tobacco Smoking",
+       y = "Externalizing problems") +
+  theme_minimal() +
+  labs(caption = "Figure 4: Effect of Environmental Tobacco Smoking on Externalizing problems")
+
+```
+
+
+```{r Fitting Regression Models}
+# model selection for externalizing problem as the outcome
+# fit first model with all covariates 
+model3 = lm(EXT ~ SDP +  ETS + page + pethnic + paian + pnhpi + pwhite + prace_other + employ + 
+              pedu + income + tage + tethnic + taian + tblack + twhite + trace_other, data = project_data)
+
+
+# drop 'tethnic' 
+model3.1 = lm(EXT ~ SDP +  ETS + page + pethnic + paian + pnhpi + pwhite + prace_other + employ + pedu + income + tage + taian + tblack + twhite + trace_other, data = project_data)
+
+
+# drop 'trace_other'
+model3.2 = lm(EXT ~ SDP +  ETS + page + pethnic + paian + pnhpi + pwhite + prace_other + employ +
+                pedu + income + tage  + taian + tblack + twhite, data = project_data)
+
+
+# drop 'pwhite'
+model3.3 = lm(EXT ~ SDP +  ETS + page + pethnic + paian + pnhpi + twhite + prace_other + employ + pedu + income + tage  + taian + tblack , data = project_data)
+
+# drop 'taian'
+model3.4 = lm(EXT ~ SDP +  ETS + page + pethnic + paian + pnhpi + pwhite + prace_other + employ + pedu + income + tage  + tblack , data = project_data)
+
+# drop 'pnhpi'
+model3.5 = lm(EXT ~ SDP +  ETS + page + pethnic + paian + pedu + pwhite + prace_other + employ + income + tage  + tblack , data = project_data)
+
+
+# drop 'income'
+model3.6 = lm(EXT ~ SDP +  ETS + page+ pethnic+ paian + pedu + pwhite + prace_other + employ +
+                tage  + tblack , data = project_data)
+
+
+# final model # adjust for page
+model3.6 = lm(EXT ~ SDP +  ETS + pethnic+ paian + pedu + pwhite + prace_other + employ +
+                tage  + tblack , data = project_data)
+#summary(model3.6)
+
+logm1 = glm(as.factor(SU) ~ SDP +  ETS + page + pethnic + paian + pnhpi + pwhite + prace_other + employ + pedu + income + tage + tethnic + taian + tblack + twhite + trace_other,family = binomial,  data = project_data)
+#summary(logm)
+
+logm2 = glm(as.factor(SU) ~ SDP +  ETS  + prace_other +tblack   ,family = binomial,  data = project_data)
+#summary(logm2)
+```
+
+
+\newpage
+##    References
+
+1. McDaniel JT, Lockhart E, Albright DL, et al. Cigarette Use among Parents with Children in the Home: A Comparison of Civilian Parents and Parents with a Military Connection. Environmental Health Insights. 2022;16:1-61 https://doi.org/10.1177/11786302221137220
+
+\newpage
+# Code Appendix: 
+
+```{r ref.label=knitr::all_labels(), echo=TRUE, eval=FALSE}
+
+```
+
