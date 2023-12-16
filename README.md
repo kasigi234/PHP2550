@@ -1,4 +1,4 @@
-# Project Portfolio PHP2550
+# Project: PHP2550
  These are projects we did during Fall 2023 semester in the Practical Data Analysis class (PHP2550). The projects covered the key main areas of data analysis. They included Exploratory Data Analysis (EDA), Regression Analysis and Simulation studies. In the first project we examined the relationship between prenatal and postnatal tobacco smoking on children's externalizing and self regulation outcomes, in the second project we built a predictive model for timing and indication for tracheostomy need in neonates with severe bronchopulmonary dysplasia (sBDP) while the last project focused on transporting a prediction model to a different population that the one it was developed and evaluated in (Non-simulated) and to a simulated population that mimics the target population based on available covariate information such as summary statistics. These projects were in collaboration with faculty from Brown University and were based on real data from their ongoing research studies. 
 
 ## Project 1: Examine the Relationship Between Pre/Postnatal Tobacco Exposure and Child Externalizing and Self Regulation Outcomes
